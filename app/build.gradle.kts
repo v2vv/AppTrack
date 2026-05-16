@@ -81,4 +81,9 @@ dependencies {
   implementation(libs.androidx.navigation3.ui)
   implementation(libs.androidx.navigation3.runtime)
   implementation(libs.androidx.lifecycle.viewmodel.navigation3)
+
+  implementation(libs.retrofit.core)
+  implementation(libs.retrofit.converter.kotlinx.serialization)
+  implementation(libs.okhttp.logging)
+  implementation(libs.kotlinx.serialization.json)
 }

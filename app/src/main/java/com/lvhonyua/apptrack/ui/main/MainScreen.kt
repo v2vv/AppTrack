@@ -21,6 +21,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -33,6 +34,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation3.runtime.NavKey
 import com.lvhonyua.apptrack.data.DefaultDataRepository
 import com.lvhonyua.apptrack.data.LocationRecord
+import com.lvhonyua.apptrack.data.LocationRepository
 import com.lvhonyua.apptrack.service.LocationTrackerService
 import com.lvhonyua.apptrack.theme.AppTrackTheme
 
@@ -47,6 +49,10 @@ fun MainScreen(
   }
   
   val state by viewModel.uiState.collectAsStateWithLifecycle()
+
+  LaunchedEffect(Unit) {
+    LocationRepository.initializeRealm()
+  }
   
   val permissionLauncher = rememberLauncherForActivityResult(
     ActivityResultContracts.RequestMultiplePermissions()
