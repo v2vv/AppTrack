@@ -1,4 +1,4 @@
-package com.example.apptrack.theme
+package com.lvhonyua.apptrack.theme
 
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme

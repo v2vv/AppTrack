@@ -1,4 +1,4 @@
-package com.example.apptrack
+package com.lvhonyua.apptrack
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -8,7 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
-import com.example.apptrack.theme.AppTrackTheme
+import com.lvhonyua.apptrack.theme.AppTrackTheme
 
 class MainActivity : ComponentActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {

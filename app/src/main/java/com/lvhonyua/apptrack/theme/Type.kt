@@ -1,4 +1,4 @@
-package com.example.apptrack.theme
+package com.lvhonyua.apptrack.theme
 
 import androidx.compose.material3.Typography
 import androidx.compose.ui.text.TextStyle

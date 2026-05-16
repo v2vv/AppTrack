@@ -5,10 +5,10 @@ plugins {
 }
 
 android {
-    namespace = "com.example.apptrack"
+    namespace = "com.lvhonyua.apptrack"
     compileSdk = 36
     defaultConfig {
-        applicationId = "com.example.apptrack"
+        applicationId = "com.lvhonyua.apptrack"
         minSdk = 29
         targetSdk = 36
         versionCode = 1

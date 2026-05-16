@@ -1,6 +1,6 @@
-package com.example.apptrack.ui.main
+package com.lvhonyua.apptrack.ui.main
 
-import com.example.apptrack.data.DataRepository
+import com.lvhonyua.apptrack.data.DataRepository
 import junit.framework.TestCase.assertEquals
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
