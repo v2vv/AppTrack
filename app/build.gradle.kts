@@ -21,14 +21,15 @@ android {
 
     buildTypes {
         release {
+            // 正式版：开启极致瘦身
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
         debug {
-            isMinifyEnabled = true
-            isShrinkResources = true
-            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            // 调试版：关闭混淆以换取极速编译
+            isMinifyEnabled = false
+            isShrinkResources = false
         }
     }
     
