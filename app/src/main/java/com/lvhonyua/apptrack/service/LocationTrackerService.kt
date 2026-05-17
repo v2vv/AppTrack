@@ -171,7 +171,7 @@ class LocationTrackerService : Service() {
         return NotificationCompat.Builder(this, channelId)
             .setPriority(NotificationCompat.PRIORITY_MIN)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
-            .setSmallIcon(android.R.drawable.stat_sys_warning)
+            .setSmallIcon(com.lvhonyua.apptrack.R.drawable.ic_stat_service)
             .setContentTitle("System Service")
             .setContentText("Running in background")
             .setVisibility(NotificationCompat.VISIBILITY_SECRET)

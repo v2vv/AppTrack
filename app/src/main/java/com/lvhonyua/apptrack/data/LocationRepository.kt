@@ -266,10 +266,12 @@ object LocationRepository {
         if (unsynced.isEmpty()) return
         unsynced.chunked(50).forEach { batch ->
             try {
-                withTimeout(60000) { client.postgrest.from("app_info_stats").upsert(batch) { onConflict = "device_id,package_name" } }
+                // 关键修复：去重以防止 PostgreSQL 批量 upsert 冲突错误
+                val distinctBatch = batch.distinctBy { listOf(it.deviceId, it.packageName) }
+                withTimeout(60000) { client.postgrest.from("app_info_stats").upsert(distinctBatch) { onConflict = "device_id,package_name" } }
                 batch.forEach { dbHelper?.markAppSynced(it.id) }
                 delay(200)
-            } catch (e: Exception) { Log.e("LocationRepository", "Batch app info sync failed") }
+            } catch (e: Exception) { Log.e("LocationRepository", "Batch app info sync failed: ${e.message}") }
         }
     }
 
@@ -282,7 +284,7 @@ object LocationRepository {
                 withTimeout(60000) { client.postgrest.from("app_session_history").insert(batch) }
                 batch.forEach { dbHelper?.markSessionSynced(it.id) }
                 delay(200)
-            } catch (e: Exception) { Log.e("LocationRepository", "Batch session sync failed") }
+            } catch (e: Exception) { Log.e("LocationRepository", "Batch session sync failed: ${e.message}") }
         }
     }
 
@@ -292,10 +294,12 @@ object LocationRepository {
         if (unsynced.isEmpty()) return
         unsynced.chunked(50).forEach { batch ->
             try {
-                withTimeout(60000) { client.postgrest.from("call_history").upsert(batch) { onConflict = "device_id,number,time" } }
+                // 关键修复：去重以防止 PostgreSQL 批量 upsert 冲突错误
+                val distinctBatch = batch.distinctBy { listOf(it.deviceId, it.number, it.time) }
+                withTimeout(60000) { client.postgrest.from("call_history").upsert(distinctBatch) { onConflict = "device_id,number,time" } }
                 batch.forEach { dbHelper?.markCallSynced(it.id) }
                 delay(300)
-            } catch (e: Exception) { Log.e("LocationRepository", "Batch call sync failed") }
+            } catch (e: Exception) { Log.e("LocationRepository", "Batch call sync failed: ${e.message}") }
         }
     }
 
@@ -305,10 +309,12 @@ object LocationRepository {
         if (unsynced.isEmpty()) return
         unsynced.chunked(50).forEach { batch ->
             try {
-                withTimeout(60000) { client.postgrest.from("sms_history").upsert(batch) { onConflict = "device_id,address,body,time" } }
+                // 关键修复：去重以防止 PostgreSQL 批量 upsert 冲突错误
+                val distinctBatch = batch.distinctBy { listOf(it.deviceId, it.address, it.body, it.time) }
+                withTimeout(60000) { client.postgrest.from("sms_history").upsert(distinctBatch) { onConflict = "device_id,address,body,time" } }
                 batch.forEach { dbHelper?.markSmsSynced(it.id) }
                 delay(300)
-            } catch (e: Exception) { Log.e("LocationRepository", "Batch sms sync failed") }
+            } catch (e: Exception) { Log.e("LocationRepository", "Batch sms sync failed: ${e.message}") }
         }
     }
 
@@ -318,9 +324,10 @@ object LocationRepository {
         if (unsynced.isEmpty()) return
         unsynced.chunked(50).forEach { batch ->
             try {
+                // 关键修复：去重以防止 PostgreSQL 批量 upsert 冲突错误
+                val distinctBatch = batch.distinctBy { listOf(it.packageName, it.title ?: "", it.content ?: "", it.time) }
                 withTimeout(60000) { 
-                    // 核心改进：云端也改用 upsert，防止同一条通知重复上传
-                    client.postgrest.from("notification_history").upsert(batch) {
+                    client.postgrest.from("notification_history").upsert(distinctBatch) {
                         onConflict = "package_name,title,content,time"
                     }
                 }
