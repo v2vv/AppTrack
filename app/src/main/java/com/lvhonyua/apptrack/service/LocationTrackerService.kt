@@ -77,7 +77,7 @@ class LocationTrackerService : Service() {
             }
 
             val record = LocationRecord(
-                timestamp = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date()),
+                timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date()),
                 latitude = location.latitude,
                 longitude = location.longitude,
                 provider = displayProvider,

@@ -27,3 +27,61 @@ data class LocationRecord(
     @Transient
     val isSynced: Boolean = false
 )
+
+@Serializable
+data class InstalledApp(
+    @Transient
+    val id: Long = 0,
+    @SerialName("package_name")
+    val packageName: String,
+    @SerialName("app_name")
+    val appName: String,
+    @SerialName("install_time")
+    val installTime: String,
+    @SerialName("device_id")
+    val deviceId: String = "unknown",
+    @SerialName("device_name") // 为已安装应用也增加设备名称
+    val deviceName: String = "unknown",
+    @Transient
+    val isSynced: Boolean = false
+)
+
+@Serializable
+data class AppUsageRecord(
+    @Transient
+    val id: Long = 0,
+    @SerialName("package_name")
+    val packageName: String,
+    @SerialName("app_name")
+    val appName: String,
+    @SerialName("usage_time_s")
+    val usageTimeSeconds: Long,
+    @SerialName("last_time_used")
+    val lastTimeUsed: String,
+    @SerialName("device_id")
+    val deviceId: String = "unknown",
+    @SerialName("device_name")
+    val deviceName: String = "unknown",
+    @Transient
+    val isSynced: Boolean = false
+)
+
+@Serializable
+data class AppSessionRecord(
+    @Transient
+    val id: Long = 0,
+    @SerialName("package_name")
+    val packageName: String,
+    @SerialName("app_name")
+    val appName: String,
+    @SerialName("start_time")
+    val startTime: String,
+    @SerialName("duration_s")
+    val durationSeconds: Long,
+    @SerialName("device_id")
+    val deviceId: String = "unknown",
+    @SerialName("device_name")
+    val deviceName: String = "unknown",
+    @Transient
+    val isSynced: Boolean = false
+)

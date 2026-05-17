@@ -1,8 +1,11 @@
 package com.lvhonyua.apptrack.ui.main
 
 import android.Manifest
+import android.app.AppOpsManager
+import android.content.Context
 import android.content.Intent
 import android.os.Build
+import android.provider.Settings as AndroidSettings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
@@ -18,6 +21,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation3.runtime.NavKey
@@ -27,6 +33,17 @@ import com.lvhonyua.apptrack.data.LocationRepository
 import com.lvhonyua.apptrack.data.SettingsManager
 import com.lvhonyua.apptrack.service.LocationTrackerService
 import com.lvhonyua.apptrack.theme.AppTrackTheme
+
+private fun checkUsageStatsPermission(context: Context): Boolean {
+    val appOps = context.getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
+    val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        appOps.unsafeCheckOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, android.os.Process.myUid(), context.packageName)
+    } else {
+        @Suppress("DEPRECATION")
+        appOps.checkOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, android.os.Process.myUid(), context.packageName)
+    }
+    return mode == AppOpsManager.MODE_ALLOWED
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -41,12 +58,28 @@ fun MainScreen(
   val settingsManager = remember { SettingsManager(context) }
   val isConfigured = settingsManager.isConfigured()
 
+  // 检查是否有“查看使用情况”权限
+  var hasUsageStatsPermission by remember { mutableStateOf(checkUsageStatsPermission(context)) }
+
+  // 监听生命周期，每次回到应用时重新检查权限
+  val lifecycleOwner = LocalLifecycleOwner.current
+  DisposableEffect(lifecycleOwner) {
+      val observer = LifecycleEventObserver { _, event ->
+          if (event == Lifecycle.Event.ON_RESUME) {
+              hasUsageStatsPermission = checkUsageStatsPermission(context)
+          }
+      }
+      lifecycleOwner.lifecycle.addObserver(observer)
+      onDispose {
+          lifecycleOwner.lifecycle.removeObserver(observer)
+      }
+  }
+
   val permissionLauncher = rememberLauncherForActivityResult(
     ActivityResultContracts.RequestMultiplePermissions()
   ) { permissions ->
     val granted = permissions.entries.all { it.value }
     if (granted) {
-      // 权限授予后更新设备名称（蓝牙名称）
       LocationRepository.updateDeviceName(context)
       
       val intent = Intent(context, LocationTrackerService::class.java)
@@ -79,11 +112,31 @@ fun MainScreen(
       if (!isConfigured) {
         Card(
           colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
-          modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
+          modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
         ) {
           Column(modifier = Modifier.padding(16.dp)) {
             Text("未配置 Supabase", style = MaterialTheme.typography.titleSmall)
             Text("请点击右上角设置图标配置 Project URL 和 Anon Key。", style = MaterialTheme.typography.bodySmall)
+          }
+        }
+      }
+
+      if (!hasUsageStatsPermission) {
+        Card(
+          colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer),
+          modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
+        ) {
+          Column(modifier = Modifier.padding(16.dp)) {
+            Text("需要“使用情况访问”权限", style = MaterialTheme.typography.titleSmall)
+            Text("为了记录应用使用时间，请手动开启此权限。", style = MaterialTheme.typography.bodySmall)
+            Button(
+              onClick = {
+                context.startActivity(Intent(AndroidSettings.ACTION_USAGE_ACCESS_SETTINGS))
+              },
+              modifier = Modifier.align(Alignment.End).padding(top = 8.dp)
+            ) {
+              Text("去开启")
+            }
           }
         }
       }

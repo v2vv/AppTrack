@@ -1,6 +1,8 @@
 package com.lvhonyua.apptrack.data
 
 import android.annotation.SuppressLint
+import android.app.usage.UsageEvents
+import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.os.Build
 import android.util.Log
@@ -16,6 +18,10 @@ import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.createSupabaseClient
 import io.github.jan.supabase.postgrest.Postgrest
 import io.github.jan.supabase.postgrest.postgrest
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Date
+import java.util.Locale
 
 object LocationRepository {
     private var settingsManager: SettingsManager? = null
@@ -32,11 +38,13 @@ object LocationRepository {
 
     private val repositoryScope = CoroutineScope(Dispatchers.IO)
 
+    // 统一的时间格式：包含日期、时间和时区
+    private fun getSdf() = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
+
     fun init(context: Context) {
         settingsManager = SettingsManager(context)
         dbHelper = LocalDbHelper(context)
         
-        // 获取唯一的 Android ID 以区分设备
         currentDeviceId = android.provider.Settings.Secure.getString(
             context.contentResolver, 
             android.provider.Settings.Secure.ANDROID_ID
@@ -46,8 +54,15 @@ object LocationRepository {
 
         updateClient()
         refreshLocalRecords()
-        // 显式触发一次同步
+        
         syncUnsyncedRecords()
+        syncUnsyncedApps()
+        syncUnsyncedUsage()
+        syncUnsyncedSessions()
+        
+        scanAndSaveInstalledApps(context)
+        scanAndSaveAppUsage(context)
+        scanAndSaveAppSessions(context)
     }
 
     @SuppressLint("MissingPermission")
@@ -64,7 +79,7 @@ object LocationRepository {
             null
         }
         
-        currentDeviceName = bluetoothName ?: "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}"
+        currentDeviceName = bluetoothName ?: "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}"      
         Log.d("LocationRepository", "Device name updated: $currentDeviceName")
     }
 
@@ -85,8 +100,10 @@ object LocationRepository {
                 ) {
                     install(Postgrest)
                 }
-                Log.d("LocationRepository", "Supabase client updated, triggering sync...")
                 syncUnsyncedRecords()
+                syncUnsyncedApps()
+                syncUnsyncedUsage()
+                syncUnsyncedSessions()
             } catch (e: Exception) {
                 Log.e("LocationRepository", "Failed to create Supabase client: ${e.message}")
                 supabaseClient = null
@@ -96,48 +113,205 @@ object LocationRepository {
         }
     }
 
-    suspend fun validateConnection(url: String, key: String, table: String = "locations"): Result<Unit> {
+    fun scanAndSaveInstalledApps(context: Context) {
+        repositoryScope.launch {
+            val pm = context.packageManager
+            val apps = pm.getInstalledApplications(android.content.pm.PackageManager.GET_META_DATA)
+            val sdf = getSdf()
+            
+            apps.forEach { appInfo ->
+                val packageName = appInfo.packageName
+                val appName = appInfo.loadLabel(pm).toString()
+                val installTime = try {
+                    val packageInfo = pm.getPackageInfo(packageName, 0)
+                    sdf.format(Date(packageInfo.firstInstallTime))
+                } catch (e: Exception) {
+                    "Unknown"
+                }
+
+                val app = InstalledApp(
+                    packageName = packageName,
+                    appName = appName,
+                    installTime = installTime,
+                    deviceId = currentDeviceId,
+                    deviceName = currentDeviceName
+                )
+                dbHelper?.insertApp(app)
+            }
+            syncUnsyncedApps()
+        }
+    }
+
+    fun scanAndSaveAppUsage(context: Context) {
+        repositoryScope.launch {
+            val usageStatsManager = context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+            val calendar = Calendar.getInstance()
+            calendar.add(Calendar.DAY_OF_YEAR, -1) 
+            val startTime = calendar.timeInMillis
+            val endTime = System.currentTimeMillis()
+
+            val stats = usageStatsManager.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, startTime, endTime)
+            if (stats.isNullOrEmpty()) return@launch
+
+            val pm = context.packageManager
+            val sdf = getSdf()
+
+            stats.forEach { usageStats ->
+                if (usageStats.totalTimeInForeground > 0) {
+                    val packageName = usageStats.packageName
+                    val appName = try {
+                        pm.getApplicationLabel(pm.getApplicationInfo(packageName, 0)).toString()
+                    } catch (e: Exception) {
+                        packageName
+                    }
+                    
+                    val record = AppUsageRecord(
+                        packageName = packageName,
+                        appName = appName,
+                        usageTimeSeconds = usageStats.totalTimeInForeground / 1000,
+                        lastTimeUsed = sdf.format(Date(usageStats.lastTimeUsed)),
+                        deviceId = currentDeviceId,
+                        deviceName = currentDeviceName
+                    )
+                    dbHelper?.insertUsage(record)
+                }
+            }
+            syncUnsyncedUsage()
+        }
+    }
+
+    fun scanAndSaveAppSessions(context: Context) {
+        repositoryScope.launch {
+            val usageStatsManager = context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+            val calendar = Calendar.getInstance()
+            calendar.add(Calendar.HOUR_OF_DAY, -12) 
+            val startTime = calendar.timeInMillis
+            val endTime = System.currentTimeMillis()
+
+            val events = usageStatsManager.queryEvents(startTime, endTime)
+            val pm = context.packageManager
+            val sdf = getSdf()
+            
+            val openTimeMap = mutableMapOf<String, Long>()
+
+            while (events.hasNextEvent()) {
+                val event = UsageEvents.Event()
+                events.getNextEvent(event)
+                
+                val pkg = event.packageName
+                when (event.eventType) {
+                    UsageEvents.Event.MOVE_TO_FOREGROUND -> {
+                        openTimeMap[pkg] = event.timeStamp
+                    }
+                    UsageEvents.Event.MOVE_TO_BACKGROUND -> {
+                        val start = openTimeMap[pkg]
+                        if (start != null) {
+                            val duration = event.timeStamp - start
+                            if (duration > 1000) { 
+                                val appName = try {
+                                    pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString()
+                                } catch (e: Exception) {
+                                    pkg
+                                }
+                                
+                                val session = AppSessionRecord(
+                                    packageName = pkg,
+                                    appName = appName,
+                                    startTime = sdf.format(Date(start)),
+                                    durationSeconds = duration / 1000,
+                                    deviceId = currentDeviceId,
+                                    deviceName = currentDeviceName
+                                )
+                                dbHelper?.insertSession(session)
+                            }
+                            openTimeMap.remove(pkg)
+                        }
+                    }
+                }
+            }
+            syncUnsyncedSessions()
+        }
+    }
+
+    fun syncUnsyncedApps() {
+        repositoryScope.launch {
+            val unsynced = dbHelper?.getUnsyncedApps() ?: return@launch
+            if (unsynced.isEmpty()) return@launch
+            unsynced.forEach { syncApp(it) }
+        }
+    }
+
+    private suspend fun syncApp(app: InstalledApp) {
+        val client = supabaseClient ?: return
+        try {
+            client.postgrest.from("installed_apps").upsert(app) {
+                onConflict = "device_id,package_name"
+            }
+            dbHelper?.markAppSynced(app.id)
+        } catch (e: Exception) {
+            Log.e("LocationRepository", "Sync app failed: ${app.packageName}")
+        }
+    }
+
+    fun syncUnsyncedUsage() {
+        repositoryScope.launch {
+            val unsynced = dbHelper?.getUnsyncedUsage() ?: return@launch
+            if (unsynced.isEmpty()) return@launch
+            unsynced.forEach { syncUsage(it) }
+        }
+    }
+
+    private suspend fun syncUsage(usage: AppUsageRecord) {
+        val client = supabaseClient ?: return
+        try {
+            client.postgrest.from("app_usage_stats").upsert(usage) {
+                onConflict = "device_id,package_name"
+            }
+            dbHelper?.markUsageSynced(usage.id)
+        } catch (e: Exception) {
+            Log.e("LocationRepository", "Sync usage failed for ${usage.packageName}")
+        }
+    }
+
+    fun syncUnsyncedSessions() {
+        repositoryScope.launch {
+            val unsynced = dbHelper?.getUnsyncedSessions() ?: return@launch
+            if (unsynced.isEmpty()) return@launch
+            unsynced.forEach { syncSession(it) }
+        }
+    }
+
+    private suspend fun syncSession(session: AppSessionRecord) {
+        val client = supabaseClient ?: return
+        try {
+            client.postgrest.from("app_session_history").insert(session)
+            dbHelper?.markSessionSynced(session.id)
+        } catch (e: Exception) {
+            Log.e("LocationRepository", "Sync session failed for ${session.appName}")
+        }
+    }
+
+    suspend fun validateConnection(url: String, key: String, table: String = "locations"): Result<Unit> {      
         return withContext(Dispatchers.IO) {
             try {
                 val tempClient = createSupabaseClient(supabaseUrl = url, supabaseKey = key) {
                     install(Postgrest)
                 }
-                
-                // 执行一个带超时的简单查询
                 withTimeout(15000) {
-                    tempClient.postgrest.from(table).select {
-                        limit(1)
-                    }
+                    tempClient.postgrest.from(table).select { limit(1) }
                 }
                 Result.success(Unit)
             } catch (e: Exception) {
-                val msg = e.message ?: e.toString()
-                val friendlyError = when {
-                    msg.contains("timeout") -> "连接超时：请确认网络正常。若一直失败，请检查 Supabase 表名是否正确，且表已创建。"
-                    msg.contains("Invalid API key") -> "Anon Key 错误：请检查拼写。"
-                    msg.contains("Failed to connect") -> "网络不可达：请检查 URL 是否正确。"
-                    msg.contains("not found") -> "表不存在：请检查 Table Name 是否正确。"
-                    else -> "验证失败: $msg"
-                }
-                Result.failure(Exception(friendlyError))
+                Result.failure(e)
             }
         }
     }
 
     fun addRecord(record: LocationRecord) {
         repositoryScope.launch {
-            // 自动填充设备 ID 和名称
-            val recordWithDevice = record.copy(
-                deviceId = currentDeviceId,
-                deviceName = currentDeviceName
-            )
-            
-            // 1. 保存到本地 SQLite
+            val recordWithDevice = record.copy(deviceId = currentDeviceId, deviceName = currentDeviceName)
             val id = dbHelper?.insertRecord(recordWithDevice) ?: return@launch
-            Log.d("LocationRepository", "New record saved locally with ID: $id")
             refreshLocalRecords()
-
-            // 2. 尝试同步
             syncRecord(recordWithDevice.copy(id = id))
         }
     }
@@ -145,46 +319,19 @@ object LocationRepository {
     fun syncUnsyncedRecords() {
         repositoryScope.launch {
             val unsynced = dbHelper?.getUnsyncedRecords() ?: return@launch
-            if (unsynced.isEmpty()) {
-                Log.d("LocationRepository", "No unsynced records found.")
-                return@launch
-            }
-            
-            Log.i("LocationRepository", "Found ${unsynced.size} unsynced records, starting sync...")
-            unsynced.forEach { record ->
-                syncRecord(record)
-            }
+            unsynced.forEach { syncRecord(it) }
         }
     }
 
     private suspend fun syncRecord(record: LocationRecord) {
-        val client = supabaseClient
-        val settings = settingsManager
-        
-        if (client == null) {
-            Log.e("LocationRepository", "Sync failed: SupabaseClient is null. Check configuration.")
-            return
-        }
-        if (settings == null) {
-            Log.e("LocationRepository", "Sync failed: SettingsManager is null.")
-            return
-        }
-        
+        val client = supabaseClient ?: return
+        val settings = settingsManager ?: return
         try {
-            Log.d("LocationRepository", "Attempting to sync record: ${record.id} to table: ${settings.tableName}")
-            // 由于 id 和 isSynced 已标记为 @Transient，它们不会被发送到 Supabase
-            val response = client.postgrest.from(settings.tableName).insert(record)
-            Log.d("LocationRepository", "Sync response for record ${record.id}: $response")
-            
-            // 3. 同步成功
+            client.postgrest.from(settings.tableName).insert(record)
             dbHelper?.markSynced(record.id)
-            Log.i("LocationRepository", "Record ${record.id} marked as synced in local DB")
             refreshLocalRecords()
         } catch (e: Exception) {
-            Log.e("LocationRepository", "Sync failed for record ${record.id}")
-            Log.e("LocationRepository", "Error message: ${e.message}")
-            Log.e("LocationRepository", "Error type: ${e.javaClass.simpleName}")
-            e.printStackTrace()
+            Log.e("LocationRepository", "Sync failed: ${e.message}")
         }
     }
 
