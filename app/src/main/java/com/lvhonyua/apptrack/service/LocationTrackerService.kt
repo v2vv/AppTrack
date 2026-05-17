@@ -7,9 +7,11 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
+import android.os.BatteryManager
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
@@ -27,11 +29,19 @@ class LocationTrackerService : Service() {
 
     private val locationListener = object : LocationListener {
         override fun onLocationChanged(location: Location) {
+            val batteryStatus: Intent? = IntentFilter(Intent.ACTION_BATTERY_CHANGED).let { ifilter ->
+                registerReceiver(null, ifilter)
+            }
+            val level: Int = batteryStatus?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
+            val scale: Int = batteryStatus?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
+            val batteryPct = if (level != -1 && scale != -1) (level * 100 / scale) else -1
+
             val record = LocationRecord(
                 timestamp = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date()),
                 latitude = location.latitude,
                 longitude = location.longitude,
-                provider = location.provider ?: "Unknown"
+                provider = location.provider ?: "Unknown",
+                batteryLevel = batteryPct
             )
             LocationRepository.addRecord(record)
         }

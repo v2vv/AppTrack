@@ -15,6 +15,7 @@ class MainActivity : ComponentActivity() {
     super.onCreate(savedInstanceState)
 
     enableEdgeToEdge()
+    com.lvhonyua.apptrack.data.LocationRepository.init(this)
     setContent {
       AppTrackTheme { Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) { MainNavigation() } }
     }
