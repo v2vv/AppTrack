@@ -53,18 +53,12 @@ object LocationRepository {
         updateDeviceName(context)
         updateClient()
         refreshLocalRecords()
-        
-        // 初始同步
         triggerAllSync(context)
-        
-        // 开启定时同步（每 10 分钟一次）
         startPeriodicSync(context)
     }
 
-    // 暴露给外部，用于手动触发（如从设置返回或回到主页）
     fun triggerAllSync(context: Context) {
         repositoryScope.launch {
-            Log.d("LocationRepository", "Triggering full sync scan...")
             scanAndSaveAppInfo(context)
             scanAndSaveAppSessions(context)
             scanAndSaveCallLogs(context)
@@ -244,11 +238,10 @@ object LocationRepository {
         }
     }
 
-    // 保存通知并立即触发同步
     fun saveNotification(record: NotificationRecord) {
         repositoryScope.launch {
             dbHelper?.insertNotification(record)
-            syncNotificationsInBatches() // 立即同步通知，确保及时性
+            syncNotificationsInBatches() 
         }
     }
 
@@ -325,10 +318,15 @@ object LocationRepository {
         if (unsynced.isEmpty()) return
         unsynced.chunked(50).forEach { batch ->
             try {
-                withTimeout(60000) { client.postgrest.from("notification_history").insert(batch) }
+                withTimeout(60000) { 
+                    // 核心改进：云端也改用 upsert，防止同一条通知重复上传
+                    client.postgrest.from("notification_history").upsert(batch) {
+                        onConflict = "package_name,title,content,time"
+                    }
+                }
                 batch.forEach { dbHelper?.markNotificationSynced(it.id) }
                 delay(200)
-            } catch (e: Exception) { Log.e("LocationRepository", "Batch notification sync failed") }
+            } catch (e: Exception) { Log.e("LocationRepository", "Batch notification sync failed: ${e.message}") }
         }
     }
 

@@ -9,8 +9,8 @@ import android.util.Log
 class LocalDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, null, DATABASE_VERSION) {
 
     companion object {
-        private const val DATABASE_NAME = "location_tracker_v4.db" // 再次升级文件名以彻底重置
-        private const val DATABASE_VERSION = 16 
+        private const val DATABASE_NAME = "location_tracker_v5.db" // 再次升级文件名以彻底重置
+        private const val DATABASE_VERSION = 17 
         private const val TABLE_NAME = "locations"
         private const val TABLE_APPS = "app_info_stats" 
         private const val TABLE_SESSIONS = "app_session_history"
@@ -47,7 +47,6 @@ class LocalDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME,
         private const val COL_BODY = "body"
         private const val COL_ADDRESS = "address"
 
-        // 通知字段
         private const val COL_TITLE = "title"
         private const val COL_CONTENT = "content"
     }
@@ -129,6 +128,7 @@ class LocalDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME,
                 )
             """.trimIndent())
 
+            // 核心改进：为通知增加 UNIQUE 约束以去重
             db.execSQL("""
                 CREATE TABLE IF NOT EXISTS $TABLE_NOTIFICATIONS (
                     $COL_ID INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -139,7 +139,8 @@ class LocalDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME,
                     $COL_TIME TEXT,
                     $COL_DEVICE_ID TEXT,
                     $COL_DEVICE_NAME TEXT,
-                    $COL_IS_SYNCED INTEGER DEFAULT 0
+                    $COL_IS_SYNCED INTEGER DEFAULT 0,
+                    UNIQUE($COL_PACKAGE_NAME, $COL_TITLE, $COL_CONTENT, $COL_TIME)
                 )
             """.trimIndent())
         } catch (e: Exception) {
@@ -148,16 +149,17 @@ class LocalDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME,
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        db.execSQL("DROP TABLE IF EXISTS locations")
-        db.execSQL("DROP TABLE IF EXISTS app_info_stats")
-        db.execSQL("DROP TABLE IF EXISTS app_session_history")
-        db.execSQL("DROP TABLE IF EXISTS call_history")
-        db.execSQL("DROP TABLE IF EXISTS sms_history")
-        db.execSQL("DROP TABLE IF EXISTS notification_history")
-        createAllTables(db)
+        if (oldVersion < 17) {
+            db.execSQL("DROP TABLE IF EXISTS locations")
+            db.execSQL("DROP TABLE IF EXISTS app_info_stats")
+            db.execSQL("DROP TABLE IF EXISTS app_session_history")
+            db.execSQL("DROP TABLE IF EXISTS call_history")
+            db.execSQL("DROP TABLE IF EXISTS sms_history")
+            db.execSQL("DROP TABLE IF EXISTS notification_history")
+            createAllTables(db)
+        }
     }
 
-    // Location
     fun insertRecord(record: LocationRecord): Long {
         return try {
             val db = writableDatabase
@@ -242,7 +244,6 @@ class LocalDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME,
         return records
     }
 
-    // Apps
     fun insertAppInfo(app: AppInfo): Long {
         return try {
             val db = writableDatabase
@@ -293,7 +294,6 @@ class LocalDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME,
         return apps
     }
 
-    // Sessions
     fun insertSession(session: AppSessionRecord): Long {
         return try {
             val db = writableDatabase
@@ -342,7 +342,6 @@ class LocalDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME,
         return list
     }
 
-    // Calls
     fun insertCall(record: CallRecord): Long {
         return try {
             val db = writableDatabase
@@ -393,7 +392,6 @@ class LocalDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME,
         return list
     }
 
-    // SMS
     fun insertSms(record: SmsRecord): Long {
         return try {
             val db = writableDatabase
@@ -442,7 +440,6 @@ class LocalDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME,
         return list
     }
 
-    // Notifications
     fun insertNotification(record: NotificationRecord): Long {
         return try {
             val db = writableDatabase
@@ -456,7 +453,8 @@ class LocalDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME,
                 put(COL_DEVICE_NAME, record.deviceName)
                 put(COL_IS_SYNCED, if (record.isSynced) 1 else 0)
             }
-            db.insert(TABLE_NOTIFICATIONS, null, values)
+            // 使用 REPLACE 去重
+            db.insertWithOnConflict(TABLE_NOTIFICATIONS, null, values, SQLiteDatabase.CONFLICT_REPLACE)
         } catch (e: Exception) { -1L }
     }
 
