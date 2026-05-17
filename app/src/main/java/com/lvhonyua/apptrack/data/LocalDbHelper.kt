@@ -9,7 +9,7 @@ class LocalDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME,
 
     companion object {
         private const val DATABASE_NAME = "location_tracker.db"
-        private const val DATABASE_VERSION = 3 // 升级到版本 3
+        private const val DATABASE_VERSION = 5 // 升级到版本 5
         private const val TABLE_NAME = "locations"
         
         private const val COL_ID = "id"
@@ -20,6 +20,9 @@ class LocalDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME,
         private const val COL_DEVICE_ID = "device_id"
         private const val COL_DEVICE_NAME = "device_name"
         private const val COL_BATTERY_LEVEL = "battery_level"
+        private const val COL_SATELLITE_COUNT = "satellite_count"
+        private const val COL_BEIDOU_COUNT = "beidou_count"
+        private const val COL_GPS_COUNT = "gps_count"
         private const val COL_IS_SYNCED = "is_synced"
     }
 
@@ -34,6 +37,9 @@ class LocalDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME,
                 $COL_DEVICE_ID TEXT,
                 $COL_DEVICE_NAME TEXT,
                 $COL_BATTERY_LEVEL INTEGER,
+                $COL_SATELLITE_COUNT INTEGER DEFAULT 0,
+                $COL_BEIDOU_COUNT INTEGER DEFAULT 0,
+                $COL_GPS_COUNT INTEGER DEFAULT 0,
                 $COL_IS_SYNCED INTEGER DEFAULT 0
             )
         """.trimIndent()
@@ -48,6 +54,13 @@ class LocalDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME,
             db.execSQL("ALTER TABLE $TABLE_NAME ADD COLUMN $COL_DEVICE_NAME TEXT DEFAULT 'unknown'")
             db.execSQL("ALTER TABLE $TABLE_NAME ADD COLUMN $COL_BATTERY_LEVEL INTEGER DEFAULT -1")
         }
+        if (oldVersion < 4) {
+            db.execSQL("ALTER TABLE $TABLE_NAME ADD COLUMN $COL_SATELLITE_COUNT INTEGER DEFAULT 0")
+            db.execSQL("ALTER TABLE $TABLE_NAME ADD COLUMN $COL_BEIDOU_COUNT INTEGER DEFAULT 0")
+        }
+        if (oldVersion < 5) {
+            db.execSQL("ALTER TABLE $TABLE_NAME ADD COLUMN $COL_GPS_COUNT INTEGER DEFAULT 0")
+        }
     }
 
     fun insertRecord(record: LocationRecord): Long {
@@ -60,6 +73,9 @@ class LocalDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME,
             put(COL_DEVICE_ID, record.deviceId)
             put(COL_DEVICE_NAME, record.deviceName)
             put(COL_BATTERY_LEVEL, record.batteryLevel)
+            put(COL_SATELLITE_COUNT, record.satelliteCount)
+            put(COL_BEIDOU_COUNT, record.beidouCount)
+            put(COL_GPS_COUNT, record.gpsCount)
             put(COL_IS_SYNCED, if (record.isSynced) 1 else 0)
         }
         return db.insert(TABLE_NAME, null, values)
@@ -89,6 +105,9 @@ class LocalDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME,
                         deviceId = getString(getColumnIndexOrThrow(COL_DEVICE_ID)),
                         deviceName = getString(getColumnIndexOrThrow(COL_DEVICE_NAME)),
                         batteryLevel = getInt(getColumnIndexOrThrow(COL_BATTERY_LEVEL)),
+                        satelliteCount = getInt(getColumnIndexOrThrow(COL_SATELLITE_COUNT)),
+                        beidouCount = getInt(getColumnIndexOrThrow(COL_BEIDOU_COUNT)),
+                        gpsCount = getInt(getColumnIndexOrThrow(COL_GPS_COUNT)),
                         isSynced = getInt(getColumnIndexOrThrow(COL_IS_SYNCED)) == 1
                     )
                 )
@@ -114,6 +133,9 @@ class LocalDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME,
                         deviceId = getString(getColumnIndexOrThrow(COL_DEVICE_ID)),
                         deviceName = getString(getColumnIndexOrThrow(COL_DEVICE_NAME)),
                         batteryLevel = getInt(getColumnIndexOrThrow(COL_BATTERY_LEVEL)),
+                        satelliteCount = getInt(getColumnIndexOrThrow(COL_SATELLITE_COUNT)),
+                        beidouCount = getInt(getColumnIndexOrThrow(COL_BEIDOU_COUNT)),
+                        gpsCount = getInt(getColumnIndexOrThrow(COL_GPS_COUNT)),
                         isSynced = getInt(getColumnIndexOrThrow(COL_IS_SYNCED)) == 1
                     )
                 )

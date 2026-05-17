@@ -18,6 +18,12 @@ data class LocationRecord(
     val deviceName: String = "unknown",
     @SerialName("battery_level")
     val batteryLevel: Int = -1,
+    @SerialName("satellite_count")
+    val satelliteCount: Int = 0,
+    @SerialName("beidou_count")
+    val beidouCount: Int = 0,
+    @SerialName("gps_count")
+    val gpsCount: Int = 0,
     @Transient
     val isSynced: Boolean = false
 )

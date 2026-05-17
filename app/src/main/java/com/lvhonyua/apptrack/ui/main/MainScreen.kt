@@ -199,6 +199,18 @@ fun LocationItem(record: LocationRecord) {
           style = MaterialTheme.typography.bodySmall
         )
       }
+      Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(
+          text = "GPS 卫星: ${record.gpsCount}",
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.secondary
+        )
+        Text(
+          text = "北斗卫星: ${record.beidouCount}",
+          style = MaterialTheme.typography.bodySmall,
+          color = if (record.beidouCount > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary
+        )
+      }
     }
   }
 }
@@ -209,8 +221,8 @@ fun MainScreenPreview() {
   AppTrackTheme {
     LocationList(
       records = listOf(
-        LocationRecord(1, "12:00:01", 39.9042, 116.4074, "gps", "device_1", "Pixel 6", 80, true),
-        LocationRecord(2, "12:00:05", 39.9043, 116.4075, "gps", "device_1", "Pixel 6", 75, false)
+        LocationRecord(1, "12:00:01", 39.9042, 116.4074, "gps", "device_1", "Pixel 6", 80, 15, 6, 8, true),
+        LocationRecord(2, "12:00:05", 39.9043, 116.4075, "gps", "device_1", "Pixel 6", 75, 12, 4, 7, false)
       )
     )
   }
