@@ -10,6 +10,8 @@ class SettingsManager(context: Context) {
         private const val KEY_SUPABASE_URL = "supabase_url"
         private const val KEY_SUPABASE_ANON_KEY = "supabase_anon_key"
         private const val KEY_TABLE_NAME = "supabase_table_name"
+        private const val KEY_APP_PASSWORD = "app_password"
+        private const val KEY_PASSWORD_ENABLED = "is_password_enabled"
     }
 
     var supabaseUrl: String
@@ -23,6 +25,14 @@ class SettingsManager(context: Context) {
     var tableName: String
         get() = prefs.getString(KEY_TABLE_NAME, "locations") ?: "locations"
         set(value) = prefs.edit().putString(KEY_TABLE_NAME, value).apply()
+
+    var appPassword: String
+        get() = prefs.getString(KEY_APP_PASSWORD, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_APP_PASSWORD, value).apply()
+
+    var isPasswordEnabled: Boolean
+        get() = prefs.getBoolean(KEY_PASSWORD_ENABLED, false)
+        set(value) = prefs.edit().putBoolean(KEY_PASSWORD_ENABLED, value).apply()
 
     fun isConfigured(): Boolean = supabaseUrl.isNotEmpty() && supabaseAnonKey.isNotEmpty()
 }

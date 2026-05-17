@@ -2,13 +2,17 @@ package com.lvhonyua.apptrack.ui.settings
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.lvhonyua.apptrack.data.LocationRepository
 import com.lvhonyua.apptrack.data.SettingsManager
@@ -26,6 +30,9 @@ fun SettingsScreen(
     var supabaseKey by remember { mutableStateOf(settingsManager.supabaseAnonKey) }
     var tableName by remember { mutableStateOf(settingsManager.tableName) }
 
+    var isPasswordEnabled by remember { mutableStateOf(settingsManager.isPasswordEnabled) }
+    var appPassword by remember { mutableStateOf(settingsManager.appPassword) }
+
     var isValidating by remember { mutableStateOf(false) }
     var validationMessage by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
     val scope = rememberCoroutineScope()
@@ -33,7 +40,7 @@ fun SettingsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Supabase 配置") },
+                title = { Text("设置") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "返回")
@@ -48,14 +55,11 @@ fun SettingsScreen(
                 .padding(16.dp)
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Text(
-                "请从 Supabase 项目设置中复制 Project URL 和 Anon Key。",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-
+            // --- Supabase 配置部分 ---
+            Text("Supabase 配置", style = MaterialTheme.typography.titleMedium)
+            
             if (validationMessage != null) {
                 Card(
                     colors = CardDefaults.cardColors(
@@ -78,7 +82,6 @@ fun SettingsScreen(
                 value = supabaseUrl,
                 onValueChange = { supabaseUrl = it },
                 label = { Text("Supabase URL") },
-                placeholder = { Text("https://xxx.supabase.co") },
                 modifier = Modifier.fillMaxWidth()
             )
             OutlinedTextField(
@@ -93,8 +96,6 @@ fun SettingsScreen(
                 label = { Text("Table Name") },
                 modifier = Modifier.fillMaxWidth()
             )
-            
-            Spacer(modifier = Modifier.height(16.dp))
             
             Button(
                 onClick = {
@@ -118,14 +119,50 @@ fun SettingsScreen(
                 enabled = !isValidating && supabaseUrl.isNotEmpty() && supabaseKey.isNotEmpty()
             ) {
                 if (isValidating) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(24.dp),
-                        color = MaterialTheme.colorScheme.onPrimary,
-                        strokeWidth = 2.dp
-                    )
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
                 } else {
-                    Text("验证并保存")
+                    Text("验证并保存 Supabase 配置")
                 }
+            }
+
+            HorizontalDivider()
+
+            // --- 密码保护部分 ---
+            Text("安全设置", style = MaterialTheme.typography.titleMedium)
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("开启密码验证")
+                Switch(
+                    checked = isPasswordEnabled,
+                    onCheckedChange = { 
+                        isPasswordEnabled = it
+                        settingsManager.isPasswordEnabled = it
+                    }
+                )
+            }
+
+            if (isPasswordEnabled) {
+                OutlinedTextField(
+                    value = appPassword,
+                    onValueChange = { 
+                        appPassword = it
+                        settingsManager.appPassword = it
+                    },
+                    label = { Text("应用进入密码") },
+                    placeholder = { Text("设置你的进入密码") },
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Text(
+                    "开启后，每次冷启动进入应用都需要输入此密码。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }
