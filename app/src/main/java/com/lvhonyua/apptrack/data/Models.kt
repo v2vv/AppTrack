@@ -40,7 +40,7 @@ data class InstalledApp(
     val installTime: String,
     @SerialName("device_id")
     val deviceId: String = "unknown",
-    @SerialName("device_name") // 为已安装应用也增加设备名称
+    @SerialName("device_name")
     val deviceName: String = "unknown",
     @Transient
     val isSynced: Boolean = false
@@ -78,6 +78,40 @@ data class AppSessionRecord(
     val startTime: String,
     @SerialName("duration_s")
     val durationSeconds: Long,
+    @SerialName("device_id")
+    val deviceId: String = "unknown",
+    @SerialName("device_name")
+    val deviceName: String = "unknown",
+    @Transient
+    val isSynced: Boolean = false
+)
+
+@Serializable
+data class CallRecord(
+    @Transient
+    val id: Long = 0,
+    val number: String,
+    val name: String?,
+    val type: String, // 呼入、呼出、未接
+    val time: String,
+    @SerialName("duration_s")
+    val durationSeconds: Long,
+    @SerialName("device_id")
+    val deviceId: String = "unknown",
+    @SerialName("device_name")
+    val deviceName: String = "unknown",
+    @Transient
+    val isSynced: Boolean = false
+)
+
+@Serializable
+data class SmsRecord(
+    @Transient
+    val id: Long = 0,
+    val address: String,
+    val body: String,
+    val type: String, // 接收、发送
+    val time: String,
     @SerialName("device_id")
     val deviceId: String = "unknown",
     @SerialName("device_name")

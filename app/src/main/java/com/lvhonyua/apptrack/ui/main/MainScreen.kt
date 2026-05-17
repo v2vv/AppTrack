@@ -4,6 +4,7 @@ import android.Manifest
 import android.app.AppOpsManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Build
 import android.provider.Settings as AndroidSettings
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -67,6 +68,19 @@ fun MainScreen(
       val observer = LifecycleEventObserver { _, event ->
           if (event == Lifecycle.Event.ON_RESUME) {
               hasUsageStatsPermission = checkUsageStatsPermission(context)
+              // 如果权限已开启且此时正在运行，尝试触发一次扫描
+              if (hasUsageStatsPermission) {
+                  LocationRepository.scanAndSaveAppUsage(context)
+                  LocationRepository.scanAndSaveAppSessions(context)
+              }
+              
+              // 同时也检查并触发通话和短信扫描（如果已有权限）
+              if (context.checkSelfPermission(Manifest.permission.READ_CALL_LOG) == PackageManager.PERMISSION_GRANTED) {
+                  LocationRepository.scanAndSaveCallLogs(context)
+              }
+              if (context.checkSelfPermission(Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED) {
+                  LocationRepository.scanAndSaveSms(context)
+              }
           }
       }
       lifecycleOwner.lifecycle.addObserver(observer)
@@ -81,6 +95,10 @@ fun MainScreen(
     val granted = permissions.entries.all { it.value }
     if (granted) {
       LocationRepository.updateDeviceName(context)
+      
+      // 触发扫描
+      LocationRepository.scanAndSaveCallLogs(context)
+      LocationRepository.scanAndSaveSms(context)
       
       val intent = Intent(context, LocationTrackerService::class.java)
       val isTracking = (state as? MainScreenUiState.Success)?.isTracking ?: false
@@ -158,7 +176,9 @@ fun MainScreen(
               } else {
                 val permissions = mutableListOf(
                   Manifest.permission.ACCESS_FINE_LOCATION,
-                  Manifest.permission.ACCESS_COARSE_LOCATION
+                  Manifest.permission.ACCESS_COARSE_LOCATION,
+                  Manifest.permission.READ_CALL_LOG,
+                  Manifest.permission.READ_SMS
                 )
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                   permissions.add(Manifest.permission.POST_NOTIFICATIONS)
