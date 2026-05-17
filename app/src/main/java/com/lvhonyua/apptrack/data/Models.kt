@@ -103,3 +103,22 @@ data class SmsRecord(
     @Transient
     val isSynced: Boolean = false
 )
+
+@Serializable
+data class NotificationRecord(
+    @Transient
+    val id: Long = 0,
+    @SerialName("package_name")
+    val packageName: String,
+    @SerialName("app_name")
+    val appName: String,
+    val title: String?,
+    val content: String?,
+    val time: String,
+    @SerialName("device_id")
+    val deviceId: String = "unknown",
+    @SerialName("device_name")
+    val deviceName: String = "unknown",
+    @Transient
+    val isSynced: Boolean = false
+)

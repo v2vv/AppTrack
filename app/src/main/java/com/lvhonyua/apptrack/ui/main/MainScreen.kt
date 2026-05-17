@@ -2,6 +2,7 @@ package com.lvhonyua.apptrack.ui.main
 
 import android.Manifest
 import android.app.AppOpsManager
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -46,6 +47,19 @@ private fun checkUsageStatsPermission(context: Context): Boolean {
     return mode == AppOpsManager.MODE_ALLOWED
 }
 
+private fun isNotificationServiceEnabled(context: Context): Boolean {
+    val pkgName = context.packageName
+    val flat = AndroidSettings.Secure.getString(context.contentResolver, "enabled_notification_listeners")
+    if (flat != null && flat.isNotEmpty()) {
+        val names = flat.split(":")
+        for (name in names) {
+            val cn = ComponentName.unflattenFromString(name)
+            if (cn != null && cn.packageName == pkgName) return true
+        }
+    }
+    return false
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(
@@ -59,22 +73,20 @@ fun MainScreen(
   val settingsManager = remember { SettingsManager(context) }
   val isConfigured = settingsManager.isConfigured()
 
-  // 检查是否有“查看使用情况”权限
   var hasUsageStatsPermission by remember { mutableStateOf(checkUsageStatsPermission(context)) }
+  var isNotificationEnabled by remember { mutableStateOf(isNotificationServiceEnabled(context)) }
 
-  // 监听生命周期，每次回到应用时重新检查权限
   val lifecycleOwner = LocalLifecycleOwner.current
   DisposableEffect(lifecycleOwner) {
       val observer = LifecycleEventObserver { _, event ->
           if (event == Lifecycle.Event.ON_RESUME) {
               hasUsageStatsPermission = checkUsageStatsPermission(context)
-              // 如果权限已开启且此时正在运行，尝试触发一次扫描
+              isNotificationEnabled = isNotificationServiceEnabled(context)
+              
               if (hasUsageStatsPermission) {
                   LocationRepository.scanAndSaveAppInfo(context)
                   LocationRepository.scanAndSaveAppSessions(context)
               }
-              
-              // 同时也检查并触发通话和短信扫描（如果已有权限）
               if (context.checkSelfPermission(Manifest.permission.READ_CALL_LOG) == PackageManager.PERMISSION_GRANTED) {
                   LocationRepository.scanAndSaveCallLogs(context)
               }
@@ -95,8 +107,6 @@ fun MainScreen(
     val granted = permissions.entries.all { it.value }
     if (granted) {
       LocationRepository.updateDeviceName(context)
-      
-      // 触发扫描
       LocationRepository.scanAndSaveCallLogs(context)
       LocationRepository.scanAndSaveSms(context)
       
@@ -142,19 +152,31 @@ fun MainScreen(
       if (!hasUsageStatsPermission) {
         Card(
           colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer),
-          modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
+          modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
         ) {
           Column(modifier = Modifier.padding(16.dp)) {
             Text("需要“使用情况访问”权限", style = MaterialTheme.typography.titleSmall)
             Text("为了记录应用使用时间，请手动开启此权限。", style = MaterialTheme.typography.bodySmall)
             Button(
-              onClick = {
-                context.startActivity(Intent(AndroidSettings.ACTION_USAGE_ACCESS_SETTINGS))
-              },
+              onClick = { context.startActivity(Intent(AndroidSettings.ACTION_USAGE_ACCESS_SETTINGS)) },
               modifier = Modifier.align(Alignment.End).padding(top = 8.dp)
-            ) {
-              Text("去开启")
-            }
+            ) { Text("去开启") }
+          }
+        }
+      }
+
+      if (!isNotificationEnabled) {
+        Card(
+          colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+          modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
+        ) {
+          Column(modifier = Modifier.padding(16.dp)) {
+            Text("需要“通知访问”权限", style = MaterialTheme.typography.titleSmall)
+            Text("为了记录通知历史，请手动开启此权限。", style = MaterialTheme.typography.bodySmall)
+            Button(
+              onClick = { context.startActivity(Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS")) },
+              modifier = Modifier.align(Alignment.End).padding(top = 8.dp)
+            ) { Text("去开启") }
           }
         }
       }

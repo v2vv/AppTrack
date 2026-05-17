@@ -9,13 +9,14 @@ import android.util.Log
 class LocalDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, null, DATABASE_VERSION) {
 
     companion object {
-        private const val DATABASE_NAME = "location_tracker_v3.db" // 再次升级文件名以彻底重置
-        private const val DATABASE_VERSION = 15 
+        private const val DATABASE_NAME = "location_tracker_v4.db" // 再次升级文件名以彻底重置
+        private const val DATABASE_VERSION = 16 
         private const val TABLE_NAME = "locations"
         private const val TABLE_APPS = "app_info_stats" 
         private const val TABLE_SESSIONS = "app_session_history"
         private const val TABLE_CALLS = "call_history"
         private const val TABLE_SMS = "sms_history"
+        private const val TABLE_NOTIFICATIONS = "notification_history"
         
         private const val COL_ID = "id"
         private const val COL_TIMESTAMP = "timestamp"
@@ -45,6 +46,10 @@ class LocalDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME,
         private const val COL_TIME = "time"
         private const val COL_BODY = "body"
         private const val COL_ADDRESS = "address"
+
+        // 通知字段
+        private const val COL_TITLE = "title"
+        private const val COL_CONTENT = "content"
     }
 
     override fun onCreate(db: SQLiteDatabase) {
@@ -70,7 +75,6 @@ class LocalDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME,
                 )
             """.trimIndent())
 
-            // 为 AppInfo 增加 UNIQUE(package_name) 约束
             db.execSQL("""
                 CREATE TABLE IF NOT EXISTS $TABLE_APPS (
                     $COL_ID INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -124,20 +128,36 @@ class LocalDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME,
                     $COL_IS_SYNCED INTEGER DEFAULT 0
                 )
             """.trimIndent())
+
+            db.execSQL("""
+                CREATE TABLE IF NOT EXISTS $TABLE_NOTIFICATIONS (
+                    $COL_ID INTEGER PRIMARY KEY AUTOINCREMENT,
+                    $COL_PACKAGE_NAME TEXT,
+                    $COL_APP_NAME TEXT,
+                    $COL_TITLE TEXT,
+                    $COL_CONTENT TEXT,
+                    $COL_TIME TEXT,
+                    $COL_DEVICE_ID TEXT,
+                    $COL_DEVICE_NAME TEXT,
+                    $COL_IS_SYNCED INTEGER DEFAULT 0
+                )
+            """.trimIndent())
         } catch (e: Exception) {
             Log.e("LocalDbHelper", "Error creating tables: ${e.message}")
         }
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        db.execSQL("DROP TABLE IF EXISTS $TABLE_NAME")
-        db.execSQL("DROP TABLE IF EXISTS $TABLE_APPS")
-        db.execSQL("DROP TABLE IF EXISTS $TABLE_SESSIONS")
-        db.execSQL("DROP TABLE IF EXISTS $TABLE_CALLS")
-        db.execSQL("DROP TABLE IF EXISTS $TABLE_SMS")
+        db.execSQL("DROP TABLE IF EXISTS locations")
+        db.execSQL("DROP TABLE IF EXISTS app_info_stats")
+        db.execSQL("DROP TABLE IF EXISTS app_session_history")
+        db.execSQL("DROP TABLE IF EXISTS call_history")
+        db.execSQL("DROP TABLE IF EXISTS sms_history")
+        db.execSQL("DROP TABLE IF EXISTS notification_history")
         createAllTables(db)
     }
 
+    // Location
     fun insertRecord(record: LocationRecord): Long {
         return try {
             val db = writableDatabase
@@ -222,6 +242,7 @@ class LocalDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME,
         return records
     }
 
+    // Apps
     fun insertAppInfo(app: AppInfo): Long {
         return try {
             val db = writableDatabase
@@ -235,7 +256,6 @@ class LocalDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME,
                 put(COL_DEVICE_NAME, app.deviceName)
                 put(COL_IS_SYNCED, if (app.isSynced) 1 else 0)
             }
-            // 使用 CONFLICT_REPLACE 确保包名相同时更新已有记录
             db.insertWithOnConflict(TABLE_APPS, null, values, SQLiteDatabase.CONFLICT_REPLACE)
         } catch (e: Exception) { -1L }
     }
@@ -252,7 +272,6 @@ class LocalDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME,
         val apps = mutableListOf<AppInfo>()
         try {
             val db = readableDatabase
-            // 重点优化：查询时先排活跃的（使用时长由大到小），这样能优先同步你常用的 App
             val cursor = db.query(TABLE_APPS, null, "$COL_IS_SYNCED = 0", null, null, null, "$COL_USAGE_TIME DESC")
             with(cursor) {
                 while (moveToNext()) {
@@ -274,6 +293,7 @@ class LocalDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME,
         return apps
     }
 
+    // Sessions
     fun insertSession(session: AppSessionRecord): Long {
         return try {
             val db = writableDatabase
@@ -322,6 +342,7 @@ class LocalDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME,
         return list
     }
 
+    // Calls
     fun insertCall(record: CallRecord): Long {
         return try {
             val db = writableDatabase
@@ -372,6 +393,7 @@ class LocalDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME,
         return list
     }
 
+    // SMS
     fun insertSms(record: SmsRecord): Long {
         return try {
             val db = writableDatabase
@@ -408,6 +430,57 @@ class LocalDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME,
                         address = getString(getColumnIndexOrThrow(COL_ADDRESS)),
                         body = getString(getColumnIndexOrThrow(COL_BODY)),
                         type = getString(getColumnIndexOrThrow(COL_TYPE)),
+                        time = getString(getColumnIndexOrThrow(COL_TIME)),
+                        deviceId = getString(getColumnIndexOrThrow(COL_DEVICE_ID)),
+                        deviceName = getString(getColumnIndexOrThrow(COL_DEVICE_NAME)),
+                        isSynced = getInt(getColumnIndexOrThrow(COL_IS_SYNCED)) == 1
+                    ))
+                }
+            }
+            cursor.close()
+        } catch (e: Exception) {}
+        return list
+    }
+
+    // Notifications
+    fun insertNotification(record: NotificationRecord): Long {
+        return try {
+            val db = writableDatabase
+            val values = ContentValues().apply {
+                put(COL_PACKAGE_NAME, record.packageName)
+                put(COL_APP_NAME, record.appName)
+                put(COL_TITLE, record.title)
+                put(COL_CONTENT, record.content)
+                put(COL_TIME, record.time)
+                put(COL_DEVICE_ID, record.deviceId)
+                put(COL_DEVICE_NAME, record.deviceName)
+                put(COL_IS_SYNCED, if (record.isSynced) 1 else 0)
+            }
+            db.insert(TABLE_NOTIFICATIONS, null, values)
+        } catch (e: Exception) { -1L }
+    }
+
+    fun markNotificationSynced(id: Long) {
+        try {
+            val db = writableDatabase
+            val values = ContentValues().apply { put(COL_IS_SYNCED, 1) }
+            db.update(TABLE_NOTIFICATIONS, values, "$COL_ID = ?", arrayOf(id.toString()))
+        } catch (e: Exception) {}
+    }
+
+    fun getUnsyncedNotifications(): List<NotificationRecord> {
+        val list = mutableListOf<NotificationRecord>()
+        try {
+            val db = readableDatabase
+            val cursor = db.query(TABLE_NOTIFICATIONS, null, "$COL_IS_SYNCED = 0", null, null, null, "$COL_ID DESC")
+            with(cursor) {
+                while (moveToNext()) {
+                    list.add(NotificationRecord(
+                        id = getLong(getColumnIndexOrThrow(COL_ID)),
+                        packageName = getString(getColumnIndexOrThrow(COL_PACKAGE_NAME)),
+                        appName = getString(getColumnIndexOrThrow(COL_APP_NAME)),
+                        title = getString(getColumnIndexOrThrow(COL_TITLE)),
+                        content = getString(getColumnIndexOrThrow(COL_CONTENT)),
                         time = getString(getColumnIndexOrThrow(COL_TIME)),
                         deviceId = getString(getColumnIndexOrThrow(COL_DEVICE_ID)),
                         deviceName = getString(getColumnIndexOrThrow(COL_DEVICE_NAME)),
