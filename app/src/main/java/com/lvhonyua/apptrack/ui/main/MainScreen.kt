@@ -20,7 +20,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
@@ -307,18 +306,5 @@ fun LocationItem(record: LocationRecord) {
         )
       }
     }
-  }
-}
-
-@Preview(showBackground = true)
-@Composable
-fun MainScreenPreview() {
-  AppTrackTheme {
-    LocationList(
-      records = listOf(
-        LocationRecord(1, "12:00:01", 39.9042, 116.4074, "gps", "device_1", "Pixel 6", 80, 15, 6, 8, true),
-        LocationRecord(2, "12:00:05", 39.9043, 116.4075, "gps", "device_1", "Pixel 6", 75, 12, 4, 7, false)
-      )
-    )
   }
 }

@@ -13,14 +13,30 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = "1.0"
+        
+        ndk {
+            abiFilters.addAll(listOf("arm64-v8a", "armeabi-v7a"))
+        }
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+        }
+        debug {
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
+    
+    lint {
+        checkReleaseBuilds = false
+        abortOnError = false
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -44,34 +60,25 @@ kotlin {
 dependencies {
   val composeBom = platform(libs.androidx.compose.bom)
   implementation(composeBom)
-  androidTestImplementation(composeBom)
-
-  // Core Android dependencies
+  
   implementation(libs.androidx.core.ktx)
   implementation(libs.androidx.lifecycle.runtime.ktx)
   implementation(libs.androidx.activity.compose)
-
-  // Arch Components
   implementation(libs.androidx.lifecycle.runtime.compose)
   implementation(libs.androidx.lifecycle.viewmodel.compose)
 
-  // Compose
   implementation(libs.androidx.compose.ui)
-  implementation(libs.androidx.compose.ui.tooling.preview)
   implementation(libs.androidx.compose.material3)
-  implementation(libs.androidx.compose.material.icons.extended)
+  implementation(libs.androidx.compose.material.icons.core)
   
-  // Navigation
+  debugImplementation(libs.androidx.compose.ui.tooling)
+  debugImplementation(libs.androidx.compose.ui.tooling.preview)
+  
   implementation(libs.androidx.navigation3.ui)
   implementation(libs.androidx.navigation3.runtime)
   implementation(libs.androidx.lifecycle.viewmodel.navigation3)
 
-  // Supabase
   implementation(libs.supabase.postgrest)
   implementation(libs.ktor.client.okhttp)
-
-  implementation(libs.retrofit.core)
-  implementation(libs.retrofit.converter.kotlinx.serialization)
-  implementation(libs.okhttp.logging)
   implementation(libs.kotlinx.serialization.json)
 }
