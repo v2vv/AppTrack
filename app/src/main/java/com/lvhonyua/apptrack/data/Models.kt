@@ -29,7 +29,7 @@ data class LocationRecord(
 )
 
 @Serializable
-data class InstalledApp(
+data class AppInfo(
     @Transient
     val id: Long = 0,
     @SerialName("package_name")
@@ -38,26 +38,10 @@ data class InstalledApp(
     val appName: String,
     @SerialName("install_time")
     val installTime: String,
-    @SerialName("device_id")
-    val deviceId: String = "unknown",
-    @SerialName("device_name")
-    val deviceName: String = "unknown",
-    @Transient
-    val isSynced: Boolean = false
-)
-
-@Serializable
-data class AppUsageRecord(
-    @Transient
-    val id: Long = 0,
-    @SerialName("package_name")
-    val packageName: String,
-    @SerialName("app_name")
-    val appName: String,
     @SerialName("usage_time_s")
-    val usageTimeSeconds: Long,
+    val usageTimeSeconds: Long = 0,
     @SerialName("last_time_used")
-    val lastTimeUsed: String,
+    val lastTimeUsed: String? = null,
     @SerialName("device_id")
     val deviceId: String = "unknown",
     @SerialName("device_name")
@@ -92,7 +76,7 @@ data class CallRecord(
     val id: Long = 0,
     val number: String,
     val name: String?,
-    val type: String, // 呼入、呼出、未接
+    val type: String,
     val time: String,
     @SerialName("duration_s")
     val durationSeconds: Long,
@@ -110,7 +94,7 @@ data class SmsRecord(
     val id: Long = 0,
     val address: String,
     val body: String,
-    val type: String, // 接收、发送
+    val type: String,
     val time: String,
     @SerialName("device_id")
     val deviceId: String = "unknown",

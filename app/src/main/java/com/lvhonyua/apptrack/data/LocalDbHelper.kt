@@ -4,15 +4,15 @@ import android.content.ContentValues
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
+import android.util.Log
 
 class LocalDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, null, DATABASE_VERSION) {
 
     companion object {
-        private const val DATABASE_NAME = "location_tracker.db"
-        private const val DATABASE_VERSION = 12 // 升级到版本 12
+        private const val DATABASE_NAME = "location_tracker_v3.db" // 再次升级文件名以彻底重置
+        private const val DATABASE_VERSION = 15 
         private const val TABLE_NAME = "locations"
-        private const val TABLE_APPS = "installed_apps"
-        private const val TABLE_USAGE = "app_usage_stats"
+        private const val TABLE_APPS = "app_info_stats" 
         private const val TABLE_SESSIONS = "app_session_history"
         private const val TABLE_CALLS = "call_history"
         private const val TABLE_SMS = "sms_history"
@@ -33,14 +33,12 @@ class LocalDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME,
         private const val COL_PACKAGE_NAME = "package_name"
         private const val COL_APP_NAME = "app_name"
         private const val COL_INSTALL_TIME = "install_time"
-
         private const val COL_USAGE_TIME = "usage_time_s"
         private const val COL_LAST_TIME_USED = "last_time_used"
 
         private const val COL_START_TIME = "start_time"
         private const val COL_DURATION = "duration_s"
 
-        // 通话/短信字段
         private const val COL_NUMBER = "number"
         private const val COL_NAME = "name"
         private const val COL_TYPE = "type"
@@ -54,390 +52,371 @@ class LocalDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME,
     }
 
     private fun createAllTables(db: SQLiteDatabase) {
-        db.execSQL("""
-            CREATE TABLE IF NOT EXISTS $TABLE_NAME (
-                $COL_ID INTEGER PRIMARY KEY AUTOINCREMENT,
-                $COL_TIMESTAMP TEXT,
-                $COL_LATITUDE REAL,
-                $COL_LONGITUDE REAL,
-                $COL_PROVIDER TEXT,
-                $COL_DEVICE_ID TEXT,
-                $COL_DEVICE_NAME TEXT,
-                $COL_BATTERY_LEVEL INTEGER,
-                $COL_SATELLITE_COUNT INTEGER DEFAULT 0,
-                $COL_BEIDOU_COUNT INTEGER DEFAULT 0,
-                $COL_GPS_COUNT INTEGER DEFAULT 0,
-                $COL_IS_SYNCED INTEGER DEFAULT 0
-            )
-        """.trimIndent())
+        try {
+            db.execSQL("""
+                CREATE TABLE IF NOT EXISTS $TABLE_NAME (
+                    $COL_ID INTEGER PRIMARY KEY AUTOINCREMENT,
+                    $COL_TIMESTAMP TEXT,
+                    $COL_LATITUDE REAL,
+                    $COL_LONGITUDE REAL,
+                    $COL_PROVIDER TEXT,
+                    $COL_DEVICE_ID TEXT,
+                    $COL_DEVICE_NAME TEXT,
+                    $COL_BATTERY_LEVEL INTEGER,
+                    $COL_SATELLITE_COUNT INTEGER DEFAULT 0,
+                    $COL_BEIDOU_COUNT INTEGER DEFAULT 0,
+                    $COL_GPS_COUNT INTEGER DEFAULT 0,
+                    $COL_IS_SYNCED INTEGER DEFAULT 0
+                )
+            """.trimIndent())
 
-        db.execSQL("""
-            CREATE TABLE IF NOT EXISTS $TABLE_APPS (
-                $COL_ID INTEGER PRIMARY KEY AUTOINCREMENT,
-                $COL_PACKAGE_NAME TEXT,
-                $COL_APP_NAME TEXT,
-                $COL_INSTALL_TIME TEXT,
-                $COL_DEVICE_ID TEXT,
-                $COL_DEVICE_NAME TEXT,
-                $COL_IS_SYNCED INTEGER DEFAULT 0
-            )
-        """.trimIndent())
+            // 为 AppInfo 增加 UNIQUE(package_name) 约束
+            db.execSQL("""
+                CREATE TABLE IF NOT EXISTS $TABLE_APPS (
+                    $COL_ID INTEGER PRIMARY KEY AUTOINCREMENT,
+                    $COL_PACKAGE_NAME TEXT UNIQUE,
+                    $COL_APP_NAME TEXT,
+                    $COL_INSTALL_TIME TEXT,
+                    $COL_USAGE_TIME INTEGER DEFAULT 0,
+                    $COL_LAST_TIME_USED TEXT,
+                    $COL_DEVICE_ID TEXT,
+                    $COL_DEVICE_NAME TEXT,
+                    $COL_IS_SYNCED INTEGER DEFAULT 0
+                )
+            """.trimIndent())
 
-        db.execSQL("""
-            CREATE TABLE IF NOT EXISTS $TABLE_USAGE (
-                $COL_ID INTEGER PRIMARY KEY AUTOINCREMENT,
-                $COL_PACKAGE_NAME TEXT,
-                $COL_APP_NAME TEXT,
-                $COL_USAGE_TIME INTEGER,
-                $COL_LAST_TIME_USED TEXT,
-                $COL_DEVICE_ID TEXT,
-                $COL_DEVICE_NAME TEXT,
-                $COL_IS_SYNCED INTEGER DEFAULT 0
-            )
-        """.trimIndent())
+            db.execSQL("""
+                CREATE TABLE IF NOT EXISTS $TABLE_SESSIONS (
+                    $COL_ID INTEGER PRIMARY KEY AUTOINCREMENT,
+                    $COL_PACKAGE_NAME TEXT,
+                    $COL_APP_NAME TEXT,
+                    $COL_START_TIME TEXT,
+                    $COL_DURATION INTEGER,
+                    $COL_DEVICE_ID TEXT,
+                    $COL_DEVICE_NAME TEXT,
+                    $COL_IS_SYNCED INTEGER DEFAULT 0
+                )
+            """.trimIndent())
 
-        db.execSQL("""
-            CREATE TABLE IF NOT EXISTS $TABLE_SESSIONS (
-                $COL_ID INTEGER PRIMARY KEY AUTOINCREMENT,
-                $COL_PACKAGE_NAME TEXT,
-                $COL_APP_NAME TEXT,
-                $COL_START_TIME TEXT,
-                $COL_DURATION INTEGER,
-                $COL_DEVICE_ID TEXT,
-                $COL_DEVICE_NAME TEXT,
-                $COL_IS_SYNCED INTEGER DEFAULT 0
-            )
-        """.trimIndent())
+            db.execSQL("""
+                CREATE TABLE IF NOT EXISTS $TABLE_CALLS (
+                    $COL_ID INTEGER PRIMARY KEY AUTOINCREMENT,
+                    $COL_NUMBER TEXT,
+                    $COL_NAME TEXT,
+                    $COL_TYPE TEXT,
+                    $COL_TIME TEXT,
+                    $COL_DURATION INTEGER,
+                    $COL_DEVICE_ID TEXT,
+                    $COL_DEVICE_NAME TEXT,
+                    $COL_IS_SYNCED INTEGER DEFAULT 0
+                )
+            """.trimIndent())
 
-        db.execSQL("""
-            CREATE TABLE IF NOT EXISTS $TABLE_CALLS (
-                $COL_ID INTEGER PRIMARY KEY AUTOINCREMENT,
-                $COL_NUMBER TEXT,
-                $COL_NAME TEXT,
-                $COL_TYPE TEXT,
-                $COL_TIME TEXT,
-                $COL_DURATION INTEGER,
-                $COL_DEVICE_ID TEXT,
-                $COL_DEVICE_NAME TEXT,
-                $COL_IS_SYNCED INTEGER DEFAULT 0
-            )
-        """.trimIndent())
-
-        db.execSQL("""
-            CREATE TABLE IF NOT EXISTS $TABLE_SMS (
-                $COL_ID INTEGER PRIMARY KEY AUTOINCREMENT,
-                $COL_ADDRESS TEXT,
-                $COL_BODY TEXT,
-                $COL_TYPE TEXT,
-                $COL_TIME TEXT,
-                $COL_DEVICE_ID TEXT,
-                $COL_DEVICE_NAME TEXT,
-                $COL_IS_SYNCED INTEGER DEFAULT 0
-            )
-        """.trimIndent())
+            db.execSQL("""
+                CREATE TABLE IF NOT EXISTS $TABLE_SMS (
+                    $COL_ID INTEGER PRIMARY KEY AUTOINCREMENT,
+                    $COL_ADDRESS TEXT,
+                    $COL_BODY TEXT,
+                    $COL_TYPE TEXT,
+                    $COL_TIME TEXT,
+                    $COL_DEVICE_ID TEXT,
+                    $COL_DEVICE_NAME TEXT,
+                    $COL_IS_SYNCED INTEGER DEFAULT 0
+                )
+            """.trimIndent())
+        } catch (e: Exception) {
+            Log.e("LocalDbHelper", "Error creating tables: ${e.message}")
+        }
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        if (oldVersion < 12) {
-            db.execSQL("DROP TABLE IF EXISTS $TABLE_NAME")
-            db.execSQL("DROP TABLE IF EXISTS $TABLE_APPS")
-            db.execSQL("DROP TABLE IF EXISTS $TABLE_USAGE")
-            db.execSQL("DROP TABLE IF EXISTS $TABLE_SESSIONS")
-            db.execSQL("DROP TABLE IF EXISTS $TABLE_CALLS")
-            db.execSQL("DROP TABLE IF EXISTS $TABLE_SMS")
-            createAllTables(db)
-        }
+        db.execSQL("DROP TABLE IF EXISTS $TABLE_NAME")
+        db.execSQL("DROP TABLE IF EXISTS $TABLE_APPS")
+        db.execSQL("DROP TABLE IF EXISTS $TABLE_SESSIONS")
+        db.execSQL("DROP TABLE IF EXISTS $TABLE_CALLS")
+        db.execSQL("DROP TABLE IF EXISTS $TABLE_SMS")
+        createAllTables(db)
     }
 
-    // Location
     fun insertRecord(record: LocationRecord): Long {
-        val db = writableDatabase
-        val values = ContentValues().apply {
-            put(COL_TIMESTAMP, record.timestamp)
-            put(COL_LATITUDE, record.latitude)
-            put(COL_LONGITUDE, record.longitude)
-            put(COL_PROVIDER, record.provider)
-            put(COL_DEVICE_ID, record.deviceId)
-            put(COL_DEVICE_NAME, record.deviceName)
-            put(COL_BATTERY_LEVEL, record.batteryLevel)
-            put(COL_SATELLITE_COUNT, record.satelliteCount)
-            put(COL_BEIDOU_COUNT, record.beidouCount)
-            put(COL_GPS_COUNT, record.gpsCount)
-            put(COL_IS_SYNCED, if (record.isSynced) 1 else 0)
-        }
-        return db.insert(TABLE_NAME, null, values)
+        return try {
+            val db = writableDatabase
+            val values = ContentValues().apply {
+                put(COL_TIMESTAMP, record.timestamp)
+                put(COL_LATITUDE, record.latitude)
+                put(COL_LONGITUDE, record.longitude)
+                put(COL_PROVIDER, record.provider)
+                put(COL_DEVICE_ID, record.deviceId)
+                put(COL_DEVICE_NAME, record.deviceName)
+                put(COL_BATTERY_LEVEL, record.batteryLevel)
+                put(COL_SATELLITE_COUNT, record.satelliteCount)
+                put(COL_BEIDOU_COUNT, record.beidouCount)
+                put(COL_GPS_COUNT, record.gpsCount)
+                put(COL_IS_SYNCED, if (record.isSynced) 1 else 0)
+            }
+            db.insert(TABLE_NAME, null, values)
+        } catch (e: Exception) { -1L }
     }
 
     fun markSynced(id: Long) {
-        val db = writableDatabase
-        val values = ContentValues().apply { put(COL_IS_SYNCED, 1) }
-        db.update(TABLE_NAME, values, "$COL_ID = ?", arrayOf(id.toString()))
+        try {
+            val db = writableDatabase
+            val values = ContentValues().apply { put(COL_IS_SYNCED, 1) }
+            db.update(TABLE_NAME, values, "$COL_ID = ?", arrayOf(id.toString()))
+        } catch (e: Exception) {}
     }
 
     fun getUnsyncedRecords(): List<LocationRecord> {
-        val db = readableDatabase
-        val cursor = try { db.query(TABLE_NAME, null, "$COL_IS_SYNCED = 0", null, null, null, null) } catch (e: Exception) { return emptyList() }
         val records = mutableListOf<LocationRecord>()
-        with(cursor) {
-            while (moveToNext()) {
-                records.add(LocationRecord(
-                    id = getLong(getColumnIndexOrThrow(COL_ID)),
-                    timestamp = getString(getColumnIndexOrThrow(COL_TIMESTAMP)),
-                    latitude = getDouble(getColumnIndexOrThrow(COL_LATITUDE)),
-                    longitude = getDouble(getColumnIndexOrThrow(COL_LONGITUDE)),
-                    provider = getString(getColumnIndexOrThrow(COL_PROVIDER)),
-                    deviceId = getString(getColumnIndexOrThrow(COL_DEVICE_ID)),
-                    deviceName = getString(getColumnIndexOrThrow(COL_DEVICE_NAME)),
-                    batteryLevel = getInt(getColumnIndexOrThrow(COL_BATTERY_LEVEL)),
-                    satelliteCount = getInt(getColumnIndexOrThrow(COL_SATELLITE_COUNT)),
-                    beidouCount = getInt(getColumnIndexOrThrow(COL_BEIDOU_COUNT)),
-                    gpsCount = getInt(getColumnIndexOrThrow(COL_GPS_COUNT)),
-                    isSynced = getInt(getColumnIndexOrThrow(COL_IS_SYNCED)) == 1
-                ))
+        try {
+            val db = readableDatabase
+            val cursor = db.query(TABLE_NAME, null, "$COL_IS_SYNCED = 0", null, null, null, null)
+            with(cursor) {
+                while (moveToNext()) {
+                    records.add(LocationRecord(
+                        id = getLong(getColumnIndexOrThrow(COL_ID)),
+                        timestamp = getString(getColumnIndexOrThrow(COL_TIMESTAMP)),
+                        latitude = getDouble(getColumnIndexOrThrow(COL_LATITUDE)),
+                        longitude = getDouble(getColumnIndexOrThrow(COL_LONGITUDE)),
+                        provider = getString(getColumnIndexOrThrow(COL_PROVIDER)),
+                        deviceId = getString(getColumnIndexOrThrow(COL_DEVICE_ID)),
+                        deviceName = getString(getColumnIndexOrThrow(COL_DEVICE_NAME)),
+                        batteryLevel = getInt(getColumnIndexOrThrow(COL_BATTERY_LEVEL)),
+                        satelliteCount = getInt(getColumnIndexOrThrow(COL_SATELLITE_COUNT)),
+                        beidouCount = getInt(getColumnIndexOrThrow(COL_BEIDOU_COUNT)),
+                        gpsCount = getInt(getColumnIndexOrThrow(COL_GPS_COUNT)),
+                        isSynced = getInt(getColumnIndexOrThrow(COL_IS_SYNCED)) == 1
+                    ))
+                }
             }
-        }
-        cursor.close()
+            cursor.close()
+        } catch (e: Exception) {}
         return records
     }
 
     fun getAllRecords(): List<LocationRecord> {
-        val db = readableDatabase
-        val cursor = try { db.query(TABLE_NAME, null, null, null, null, null, "$COL_ID DESC") } catch (e: Exception) { return emptyList() }
         val records = mutableListOf<LocationRecord>()
-        with(cursor) {
-            while (moveToNext()) {
-                records.add(LocationRecord(
-                    id = getLong(getColumnIndexOrThrow(COL_ID)),
-                    timestamp = getString(getColumnIndexOrThrow(COL_TIMESTAMP)),
-                    latitude = getDouble(getColumnIndexOrThrow(COL_LATITUDE)),
-                    longitude = getDouble(getColumnIndexOrThrow(COL_LONGITUDE)),
-                    provider = getString(getColumnIndexOrThrow(COL_PROVIDER)),
-                    deviceId = getString(getColumnIndexOrThrow(COL_DEVICE_ID)),
-                    deviceName = getString(getColumnIndexOrThrow(COL_DEVICE_NAME)),
-                    batteryLevel = getInt(getColumnIndexOrThrow(COL_BATTERY_LEVEL)),
-                    satelliteCount = getInt(getColumnIndexOrThrow(COL_SATELLITE_COUNT)),
-                    beidouCount = getInt(getColumnIndexOrThrow(COL_BEIDOU_COUNT)),
-                    gpsCount = getInt(getColumnIndexOrThrow(COL_GPS_COUNT)),
-                    isSynced = getInt(getColumnIndexOrThrow(COL_IS_SYNCED)) == 1
-                ))
+        try {
+            val db = readableDatabase
+            val cursor = db.query(TABLE_NAME, null, null, null, null, null, "$COL_ID DESC")
+            with(cursor) {
+                while (moveToNext()) {
+                    records.add(LocationRecord(
+                        id = getLong(getColumnIndexOrThrow(COL_ID)),
+                        timestamp = getString(getColumnIndexOrThrow(COL_TIMESTAMP)),
+                        latitude = getDouble(getColumnIndexOrThrow(COL_LATITUDE)),
+                        longitude = getDouble(getColumnIndexOrThrow(COL_LONGITUDE)),
+                        provider = getString(getColumnIndexOrThrow(COL_PROVIDER)),
+                        deviceId = getString(getColumnIndexOrThrow(COL_DEVICE_ID)),
+                        deviceName = getString(getColumnIndexOrThrow(COL_DEVICE_NAME)),
+                        batteryLevel = getInt(getColumnIndexOrThrow(COL_BATTERY_LEVEL)),
+                        satelliteCount = getInt(getColumnIndexOrThrow(COL_SATELLITE_COUNT)),
+                        beidouCount = getInt(getColumnIndexOrThrow(COL_BEIDOU_COUNT)),
+                        gpsCount = getInt(getColumnIndexOrThrow(COL_GPS_COUNT)),
+                        isSynced = getInt(getColumnIndexOrThrow(COL_IS_SYNCED)) == 1
+                    ))
+                }
             }
-        }
-        cursor.close()
+            cursor.close()
+        } catch (e: Exception) {}
         return records
     }
 
-    // Apps
-    fun insertApp(app: InstalledApp): Long {
-        val db = writableDatabase
-        val values = ContentValues().apply {
-            put(COL_PACKAGE_NAME, app.packageName)
-            put(COL_APP_NAME, app.appName)
-            put(COL_INSTALL_TIME, app.installTime)
-            put(COL_DEVICE_ID, app.deviceId)
-            put(COL_DEVICE_NAME, app.deviceName)
-            put(COL_IS_SYNCED, if (app.isSynced) 1 else 0)
-        }
-        return db.insert(TABLE_APPS, null, values)
+    fun insertAppInfo(app: AppInfo): Long {
+        return try {
+            val db = writableDatabase
+            val values = ContentValues().apply {
+                put(COL_PACKAGE_NAME, app.packageName)
+                put(COL_APP_NAME, app.appName)
+                put(COL_INSTALL_TIME, app.installTime)
+                put(COL_USAGE_TIME, app.usageTimeSeconds)
+                put(COL_LAST_TIME_USED, app.lastTimeUsed)
+                put(COL_DEVICE_ID, app.deviceId)
+                put(COL_DEVICE_NAME, app.deviceName)
+                put(COL_IS_SYNCED, if (app.isSynced) 1 else 0)
+            }
+            // 使用 CONFLICT_REPLACE 确保包名相同时更新已有记录
+            db.insertWithOnConflict(TABLE_APPS, null, values, SQLiteDatabase.CONFLICT_REPLACE)
+        } catch (e: Exception) { -1L }
     }
 
     fun markAppSynced(id: Long) {
-        val db = writableDatabase
-        val values = ContentValues().apply { put(COL_IS_SYNCED, 1) }
-        db.update(TABLE_APPS, values, "$COL_ID = ?", arrayOf(id.toString()))
+        try {
+            val db = writableDatabase
+            val values = ContentValues().apply { put(COL_IS_SYNCED, 1) }
+            db.update(TABLE_APPS, values, "$COL_ID = ?", arrayOf(id.toString()))
+        } catch (e: Exception) {}
     }
 
-    fun getUnsyncedApps(): List<InstalledApp> {
-        val db = readableDatabase
-        val cursor = try { db.query(TABLE_APPS, null, "$COL_IS_SYNCED = 0", null, null, null, null) } catch (e: Exception) { return emptyList() }
-        val apps = mutableListOf<InstalledApp>()
-        with(cursor) {
-            while (moveToNext()) {
-                apps.add(InstalledApp(
-                    id = getLong(getColumnIndexOrThrow(COL_ID)),
-                    packageName = getString(getColumnIndexOrThrow(COL_PACKAGE_NAME)),
-                    appName = getString(getColumnIndexOrThrow(COL_APP_NAME)),
-                    installTime = getString(getColumnIndexOrThrow(COL_INSTALL_TIME)),
-                    deviceId = getString(getColumnIndexOrThrow(COL_DEVICE_ID)),
-                    deviceName = getString(getColumnIndexOrThrow(COL_DEVICE_NAME)),
-                    isSynced = getInt(getColumnIndexOrThrow(COL_IS_SYNCED)) == 1
-                ))
+    fun getUnsyncedAppInfos(): List<AppInfo> {
+        val apps = mutableListOf<AppInfo>()
+        try {
+            val db = readableDatabase
+            // 重点优化：查询时先排活跃的（使用时长由大到小），这样能优先同步你常用的 App
+            val cursor = db.query(TABLE_APPS, null, "$COL_IS_SYNCED = 0", null, null, null, "$COL_USAGE_TIME DESC")
+            with(cursor) {
+                while (moveToNext()) {
+                    apps.add(AppInfo(
+                        id = getLong(getColumnIndexOrThrow(COL_ID)),
+                        packageName = getString(getColumnIndexOrThrow(COL_PACKAGE_NAME)),
+                        appName = getString(getColumnIndexOrThrow(COL_APP_NAME)),
+                        installTime = getString(getColumnIndexOrThrow(COL_INSTALL_TIME)),
+                        usageTimeSeconds = getLong(getColumnIndexOrThrow(COL_USAGE_TIME)),
+                        lastTimeUsed = getString(getColumnIndexOrThrow(COL_LAST_TIME_USED)),
+                        deviceId = getString(getColumnIndexOrThrow(COL_DEVICE_ID)),
+                        deviceName = getString(getColumnIndexOrThrow(COL_DEVICE_NAME)),
+                        isSynced = getInt(getColumnIndexOrThrow(COL_IS_SYNCED)) == 1
+                    ))
+                }
             }
-        }
-        cursor.close()
+            cursor.close()
+        } catch (e: Exception) {}
         return apps
     }
 
-    // Usage
-    fun insertUsage(usage: AppUsageRecord): Long {
-        val db = writableDatabase
-        val values = ContentValues().apply {
-            put(COL_PACKAGE_NAME, usage.packageName)
-            put(COL_APP_NAME, usage.appName)
-            put(COL_USAGE_TIME, usage.usageTimeSeconds)
-            put(COL_LAST_TIME_USED, usage.lastTimeUsed)
-            put(COL_DEVICE_ID, usage.deviceId)
-            put(COL_DEVICE_NAME, usage.deviceName)
-            put(COL_IS_SYNCED, if (usage.isSynced) 1 else 0)
-        }
-        return db.insert(TABLE_USAGE, null, values)
-    }
-
-    fun markUsageSynced(id: Long) {
-        val db = writableDatabase
-        val values = ContentValues().apply { put(COL_IS_SYNCED, 1) }
-        db.update(TABLE_USAGE, values, "$COL_ID = ?", arrayOf(id.toString()))
-    }
-
-    fun getUnsyncedUsage(): List<AppUsageRecord> {
-        val db = readableDatabase
-        val cursor = try { db.query(TABLE_USAGE, null, "$COL_IS_SYNCED = 0", null, null, null, null) } catch (e: Exception) { return emptyList() }
-        val list = mutableListOf<AppUsageRecord>()
-        with(cursor) {
-            while (moveToNext()) {
-                list.add(AppUsageRecord(
-                    id = getLong(getColumnIndexOrThrow(COL_ID)),
-                    packageName = getString(getColumnIndexOrThrow(COL_PACKAGE_NAME)),
-                    appName = getString(getColumnIndexOrThrow(COL_APP_NAME)),
-                    usageTimeSeconds = getLong(getColumnIndexOrThrow(COL_USAGE_TIME)),
-                    lastTimeUsed = getString(getColumnIndexOrThrow(COL_LAST_TIME_USED)),
-                    deviceId = getString(getColumnIndexOrThrow(COL_DEVICE_ID)),
-                    deviceName = getString(getColumnIndexOrThrow(COL_DEVICE_NAME)),
-                    isSynced = getInt(getColumnIndexOrThrow(COL_IS_SYNCED)) == 1
-                ))
-            }
-        }
-        cursor.close()
-        return list
-    }
-
-    // Sessions
     fun insertSession(session: AppSessionRecord): Long {
-        val db = writableDatabase
-        val values = ContentValues().apply {
-            put(COL_PACKAGE_NAME, session.packageName)
-            put(COL_APP_NAME, session.appName)
-            put(COL_START_TIME, session.startTime)
-            put(COL_DURATION, session.durationSeconds)
-            put(COL_DEVICE_ID, session.deviceId)
-            put(COL_DEVICE_NAME, session.deviceName)
-            put(COL_IS_SYNCED, if (session.isSynced) 1 else 0)
-        }
-        return db.insert(TABLE_SESSIONS, null, values)
+        return try {
+            val db = writableDatabase
+            val values = ContentValues().apply {
+                put(COL_PACKAGE_NAME, session.packageName)
+                put(COL_APP_NAME, session.appName)
+                put(COL_START_TIME, session.startTime)
+                put(COL_DURATION, session.durationSeconds)
+                put(COL_DEVICE_ID, session.deviceId)
+                put(COL_DEVICE_NAME, session.deviceName)
+                put(COL_IS_SYNCED, if (session.isSynced) 1 else 0)
+            }
+            db.insert(TABLE_SESSIONS, null, values)
+        } catch (e: Exception) { -1L }
     }
 
     fun markSessionSynced(id: Long) {
-        val db = writableDatabase
-        val values = ContentValues().apply { put(COL_IS_SYNCED, 1) }
-        db.update(TABLE_SESSIONS, values, "$COL_ID = ?", arrayOf(id.toString()))
+        try {
+            val db = writableDatabase
+            val values = ContentValues().apply { put(COL_IS_SYNCED, 1) }
+            db.update(TABLE_SESSIONS, values, "$COL_ID = ?", arrayOf(id.toString()))
+        } catch (e: Exception) {}
     }
 
     fun getUnsyncedSessions(): List<AppSessionRecord> {
-        val db = readableDatabase
-        val cursor = try { db.query(TABLE_SESSIONS, null, "$COL_IS_SYNCED = 0", null, null, null, null) } catch (e: Exception) { return emptyList() }
         val list = mutableListOf<AppSessionRecord>()
-        with(cursor) {
-            while (moveToNext()) {
-                list.add(AppSessionRecord(
-                    id = getLong(getColumnIndexOrThrow(COL_ID)),
-                    packageName = getString(getColumnIndexOrThrow(COL_PACKAGE_NAME)),
-                    appName = getString(getColumnIndexOrThrow(COL_APP_NAME)),
-                    startTime = getString(getColumnIndexOrThrow(COL_START_TIME)),
-                    durationSeconds = getLong(getColumnIndexOrThrow(COL_DURATION)),
-                    deviceId = getString(getColumnIndexOrThrow(COL_DEVICE_ID)),
-                    deviceName = getString(getColumnIndexOrThrow(COL_DEVICE_NAME)),
-                    isSynced = getInt(getColumnIndexOrThrow(COL_IS_SYNCED)) == 1
-                ))
+        try {
+            val db = readableDatabase
+            val cursor = db.query(TABLE_SESSIONS, null, "$COL_IS_SYNCED = 0", null, null, null, "$COL_ID DESC")
+            with(cursor) {
+                while (moveToNext()) {
+                    list.add(AppSessionRecord(
+                        id = getLong(getColumnIndexOrThrow(COL_ID)),
+                        packageName = getString(getColumnIndexOrThrow(COL_PACKAGE_NAME)),
+                        appName = getString(getColumnIndexOrThrow(COL_APP_NAME)),
+                        startTime = getString(getColumnIndexOrThrow(COL_START_TIME)),
+                        durationSeconds = getLong(getColumnIndexOrThrow(COL_DURATION)),
+                        deviceId = getString(getColumnIndexOrThrow(COL_DEVICE_ID)),
+                        deviceName = getString(getColumnIndexOrThrow(COL_DEVICE_NAME)),
+                        isSynced = getInt(getColumnIndexOrThrow(COL_IS_SYNCED)) == 1
+                    ))
+                }
             }
-        }
-        cursor.close()
+            cursor.close()
+        } catch (e: Exception) {}
         return list
     }
 
-    // Calls
     fun insertCall(record: CallRecord): Long {
-        val db = writableDatabase
-        val values = ContentValues().apply {
-            put(COL_NUMBER, record.number)
-            put(COL_NAME, record.name)
-            put(COL_TYPE, record.type)
-            put(COL_TIME, record.time)
-            put(COL_DURATION, record.durationSeconds)
-            put(COL_DEVICE_ID, record.deviceId)
-            put(COL_DEVICE_NAME, record.deviceName)
-            put(COL_IS_SYNCED, if (record.isSynced) 1 else 0)
-        }
-        return db.insert(TABLE_CALLS, null, values)
+        return try {
+            val db = writableDatabase
+            val values = ContentValues().apply {
+                put(COL_NUMBER, record.number)
+                put(COL_NAME, record.name)
+                put(COL_TYPE, record.type)
+                put(COL_TIME, record.time)
+                put(COL_DURATION, record.durationSeconds)
+                put(COL_DEVICE_ID, record.deviceId)
+                put(COL_DEVICE_NAME, record.deviceName)
+                put(COL_IS_SYNCED, if (record.isSynced) 1 else 0)
+            }
+            db.insert(TABLE_CALLS, null, values)
+        } catch (e: Exception) { -1L }
     }
 
     fun markCallSynced(id: Long) {
-        val db = writableDatabase
-        val values = ContentValues().apply { put(COL_IS_SYNCED, 1) }
-        db.update(TABLE_CALLS, values, "$COL_ID = ?", arrayOf(id.toString()))
+        try {
+            val db = writableDatabase
+            val values = ContentValues().apply { put(COL_IS_SYNCED, 1) }
+            db.update(TABLE_CALLS, values, "$COL_ID = ?", arrayOf(id.toString()))
+        } catch (e: Exception) {}
     }
 
     fun getUnsyncedCalls(): List<CallRecord> {
-        val db = readableDatabase
-        val cursor = try { db.query(TABLE_CALLS, null, "$COL_IS_SYNCED = 0", null, null, null, null) } catch (e: Exception) { return emptyList() }
         val list = mutableListOf<CallRecord>()
-        with(cursor) {
-            while (moveToNext()) {
-                list.add(CallRecord(
-                    id = getLong(getColumnIndexOrThrow(COL_ID)),
-                    number = getString(getColumnIndexOrThrow(COL_NUMBER)),
-                    name = getString(getColumnIndexOrThrow(COL_NAME)),
-                    type = getString(getColumnIndexOrThrow(COL_TYPE)),
-                    time = getString(getColumnIndexOrThrow(COL_TIME)),
-                    durationSeconds = getLong(getColumnIndexOrThrow(COL_DURATION)),
-                    deviceId = getString(getColumnIndexOrThrow(COL_DEVICE_ID)),
-                    deviceName = getString(getColumnIndexOrThrow(COL_DEVICE_NAME)),
-                    isSynced = getInt(getColumnIndexOrThrow(COL_IS_SYNCED)) == 1
-                ))
+        try {
+            val db = readableDatabase
+            val cursor = db.query(TABLE_CALLS, null, "$COL_IS_SYNCED = 0", null, null, null, "$COL_ID DESC")
+            with(cursor) {
+                while (moveToNext()) {
+                    list.add(CallRecord(
+                        id = getLong(getColumnIndexOrThrow(COL_ID)),
+                        number = getString(getColumnIndexOrThrow(COL_NUMBER)),
+                        name = getString(getColumnIndexOrThrow(COL_NAME)),
+                        type = getString(getColumnIndexOrThrow(COL_TYPE)),
+                        time = getString(getColumnIndexOrThrow(COL_TIME)),
+                        durationSeconds = getLong(getColumnIndexOrThrow(COL_DURATION)),
+                        deviceId = getString(getColumnIndexOrThrow(COL_DEVICE_ID)),
+                        deviceName = getString(getColumnIndexOrThrow(COL_DEVICE_NAME)),
+                        isSynced = getInt(getColumnIndexOrThrow(COL_IS_SYNCED)) == 1
+                    ))
+                }
             }
-        }
-        cursor.close()
+            cursor.close()
+        } catch (e: Exception) {}
         return list
     }
 
-    // SMS
     fun insertSms(record: SmsRecord): Long {
-        val db = writableDatabase
-        val values = ContentValues().apply {
-            put(COL_ADDRESS, record.address)
-            put(COL_BODY, record.body)
-            put(COL_TYPE, record.type)
-            put(COL_TIME, record.time)
-            put(COL_DEVICE_ID, record.deviceId)
-            put(COL_DEVICE_NAME, record.deviceName)
-            put(COL_IS_SYNCED, if (record.isSynced) 1 else 0)
-        }
-        return db.insert(TABLE_SMS, null, values)
+        return try {
+            val db = writableDatabase
+            val values = ContentValues().apply {
+                put(COL_ADDRESS, record.address)
+                put(COL_BODY, record.body)
+                put(COL_TYPE, record.type)
+                put(COL_TIME, record.time)
+                put(COL_DEVICE_ID, record.deviceId)
+                put(COL_DEVICE_NAME, record.deviceName)
+                put(COL_IS_SYNCED, if (record.isSynced) 1 else 0)
+            }
+            db.insert(TABLE_SMS, null, values)
+        } catch (e: Exception) { -1L }
     }
 
     fun markSmsSynced(id: Long) {
-        val db = writableDatabase
-        val values = ContentValues().apply { put(COL_IS_SYNCED, 1) }
-        db.update(TABLE_SMS, values, "$COL_ID = ?", arrayOf(id.toString()))
+        try {
+            val db = writableDatabase
+            val values = ContentValues().apply { put(COL_IS_SYNCED, 1) }
+            db.update(TABLE_SMS, values, "$COL_ID = ?", arrayOf(id.toString()))
+        } catch (e: Exception) {}
     }
 
     fun getUnsyncedSms(): List<SmsRecord> {
-        val db = readableDatabase
-        val cursor = try { db.query(TABLE_SMS, null, "$COL_IS_SYNCED = 0", null, null, null, null) } catch (e: Exception) { return emptyList() }
         val list = mutableListOf<SmsRecord>()
-        with(cursor) {
-            while (moveToNext()) {
-                list.add(SmsRecord(
-                    id = getLong(getColumnIndexOrThrow(COL_ID)),
-                    address = getString(getColumnIndexOrThrow(COL_ADDRESS)),
-                    body = getString(getColumnIndexOrThrow(COL_BODY)),
-                    type = getString(getColumnIndexOrThrow(COL_TYPE)),
-                    time = getString(getColumnIndexOrThrow(COL_TIME)),
-                    deviceId = getString(getColumnIndexOrThrow(COL_DEVICE_ID)),
-                    deviceName = getString(getColumnIndexOrThrow(COL_DEVICE_NAME)),
-                    isSynced = getInt(getColumnIndexOrThrow(COL_IS_SYNCED)) == 1
-                ))
+        try {
+            val db = readableDatabase
+            val cursor = db.query(TABLE_SMS, null, "$COL_IS_SYNCED = 0", null, null, null, "$COL_ID DESC")
+            with(cursor) {
+                while (moveToNext()) {
+                    list.add(SmsRecord(
+                        id = getLong(getColumnIndexOrThrow(COL_ID)),
+                        address = getString(getColumnIndexOrThrow(COL_ADDRESS)),
+                        body = getString(getColumnIndexOrThrow(COL_BODY)),
+                        type = getString(getColumnIndexOrThrow(COL_TYPE)),
+                        time = getString(getColumnIndexOrThrow(COL_TIME)),
+                        deviceId = getString(getColumnIndexOrThrow(COL_DEVICE_ID)),
+                        deviceName = getString(getColumnIndexOrThrow(COL_DEVICE_NAME)),
+                        isSynced = getInt(getColumnIndexOrThrow(COL_IS_SYNCED)) == 1
+                    ))
+                }
             }
-        }
-        cursor.close()
+            cursor.close()
+        } catch (e: Exception) {}
         return list
     }
 }

@@ -70,7 +70,7 @@ fun MainScreen(
               hasUsageStatsPermission = checkUsageStatsPermission(context)
               // 如果权限已开启且此时正在运行，尝试触发一次扫描
               if (hasUsageStatsPermission) {
-                  LocationRepository.scanAndSaveAppUsage(context)
+                  LocationRepository.scanAndSaveAppInfo(context)
                   LocationRepository.scanAndSaveAppSessions(context)
               }
               
